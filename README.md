@@ -1,372 +1,659 @@
 # de-law-rs
 
-A typed, navigable representation of German law in Rust.
+A typed, navigable and mechanically inspectable representation of German law in Rust.
 
 ## Project idea
 
-The goal of this project is to represent German law as a structured Rust domain model from which familiar legal representations — especially the XML published by **Gesetze im Internet** — can be generated automatically.
+German law is normally encountered as documents: statutes, articles, paragraphs, sentences, references and amendments expressed in natural language.
 
-The project is not primarily an exercise in translating legal prose into executable algorithms.
+Those documents are not arbitrary prose.
 
-It is an attempt to make the underlying structure of law **load-bearing**.
+They describe permissions, prohibitions, obligations, powers, conditions, exceptions, definitions, deadlines, dependencies and changes over time.
 
-Instead of maintaining several loosely coupled representations:
+In that sense, legislation carves structure into the space of possible situations and actions.
 
-```text
-law text
-XML
-documentation
-cross-reference database
-indexes
-validation rules
-developer notes
-```
+This project investigates how much of that structure can be represented explicitly without pretending that natural-language law is completely executable.
 
-the intended direction is:
+The long-term direction is:
 
 ```text
-                    Rust domain model
-                           │
-             ┌─────────────┼──────────────┐
-             │             │              │
-             ▼             ▼              ▼
-            XML           HTML        plain text
-             │
-             ▼
-     comparison against
-       published XML
+authoritative / published legal sources
+                │
+                ▼
+        source snapshots
+                │
+                ▼
+        document structure
+                │
+                ▼
+         legal structure
+                │
+                ▼
+        semantic legal norms
+                │
+                ▼
+        formal constraints
+                │
+                ▼
+     mechanical inspection
 ```
 
-The law remains readable in its familiar form, but the mechanics behind that representation become explicit, typed, navigable and testable.
+Possible analyses include:
 
-A useful analogy is a spreadsheet in which users still see the familiar shift plan, while names, calculations, validation, lookups and exports are no longer maintained manually in several unrelated places.
+```text
+Does this reference resolve?
 
-The visible artifact remains familiar.
+Can these provisions apply together?
 
-The structure behind it becomes authoritative.
+Does one provision imply another?
+
+Are two modeled obligations incompatible?
+
+Does an exception remove an apparent conflict?
+
+Can all applicable constraints be satisfied simultaneously?
+
+If not, which small set of modeled norms causes the contradiction?
+
+Does sequencing make an otherwise impossible combination possible?
+
+Does the result depend on an unresolved interpretation?
+```
+
+The project is therefore not primarily an XML project and not primarily an attempt to turn statutes into executable programs.
+
+XML is an important external representation.
+
+Rust is the implementation medium.
+
+The deeper subject is the structure and interaction of legal norms.
 
 ---
 
-# Goals
+# Central question
 
-The long-term goal is to make German law feel navigable from a developer environment in roughly the same way a well-structured software project is navigable.
+A useful long-term question for the project is:
+
+> Given a modeled set of facts, interpretations, applicable norms, temporal assumptions and priority rules, what states or courses of action are compatible with the modeled legal constraints?
+
+This is deliberately narrower than asking:
+
+```text
+What is the law?
+```
+
+or:
+
+```text
+Is this behavior legally correct?
+```
+
+The system should not claim to mechanically settle disputed legal interpretation.
+
+Instead, it should eventually be able to make statements of the form:
+
+```text
+Under model M
+and assumptions A,
+
+constraints derived from
+provisions X, Y and Z
+
+have no joint satisfying assignment.
+```
+
+or:
+
+```text
+Under these assumptions,
+the modeled norms admit the following compliant state.
+```
+
+The distinction matters.
+
+A contradiction in the formal model is evidence about the model and its assumptions.
+
+It is not automatically proof that the legal system itself is contradictory.
+
+---
+
+# Why this is interesting
+
+A legal provision rarely exists in isolation.
+
+Its operation may depend on:
+
+```text
+another provision
+a definition
+an exception
+a permission
+a prohibition
+a competence rule
+an effective date
+an amendment
+a factual condition
+a procedural step
+a priority rule
+```
+
+For example, consider an artificial system:
+
+```text
+Rule A:
+If condition P holds,
+person X must perform action Q.
+
+Rule B:
+If condition P holds,
+person X must not perform action Q.
+```
+
+If `P` can occur and both rules apply simultaneously, there is no state in which X complies with both.
+
+Conceptually:
+
+```text
+P → required(Q)
+
+P → forbidden(Q)
+```
+
+Under `P`, the system becomes inconsistent unless some other legal rule resolves the conflict.
+
+A more subtle example:
+
+```text
+Rule A:
+X must happen within seven days.
+
+Rule B:
+X may not happen before approval Y.
+
+Rule C:
+Approval Y cannot occur before day ten.
+```
+
+Each rule may be individually satisfiable.
+
+Their composition may not be.
+
+This kind of interaction is one of the things the project should eventually make inspectable.
+
+---
+
+# Not every apparent conflict is a contradiction
+
+Legal rules interact in more ways than simple Boolean consistency.
+
+The model should eventually distinguish cases such as:
+
+```text
+satisfiable
+unsatisfiable
+temporally satisfiable
+conditionally satisfiable
+vacuously satisfiable
+exception-resolved
+priority-resolved
+underspecified
+interpretation-dependent
+unknown to the model
+```
 
 For example:
 
-- go to the definition of a referenced provision;
-- find all references to a provision or defined term;
-- inspect the structure of a law through Rust types;
-- detect broken or malformed references;
-- detect duplicate identifiers;
-- validate structural invariants;
-- distinguish different legal concepts through types instead of strings;
-- generate XML automatically;
-- compare generated XML with the externally published XML;
-- generate alternative views without duplicating the law;
-- inspect dependencies between laws and provisions;
-- use ordinary Git diffs to understand changes to the modeled law;
-- eventually query the corpus as a structured legal system rather than as disconnected documents.
+```text
+General rule:
+X is prohibited.
 
-The project should remain useful to one person working locally in VS Code. It does not initially need infrastructure for collaboration, web hosting, APIs, databases or production deployment.
+Exception:
+Authority A may permit X when condition C holds.
+
+Fact:
+A valid permission was granted.
+```
+
+A naïve constraint system might encode:
+
+```text
+not X
+X
+```
+
+and report a contradiction.
+
+A legal model may instead need to understand:
+
+```text
+general prohibition
+        ↓
+exception / authorization mechanism
+        ↓
+specific permission
+```
+
+The difficulty is therefore not merely solving constraints.
+
+The difficult part is representing the legal semantics that should become constraints.
 
 ---
 
-# Core principle
+# Architectural principle
 
-The central design rule is:
-
-> **Represent a fact about the law once, in the domain model, and derive other representations from it whenever practical.**
-
-For example, avoid independently maintaining:
+The project should distinguish several layers.
 
 ```text
-§ number in Rust
-§ number in XML template
-§ number in documentation
-§ number in reference table
+┌─────────────────────────────┐
+│       external sources      │
+│  BGBl / Gesetze im Internet│
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│       source snapshots      │
+│ provenance / checksum / XML │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│       document model        │
+│ XML structure / text layout │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│       legal structure       │
+│ provisions / references /  │
+│ definitions / amendments   │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│       semantic model        │
+│ conditions / actors /       │
+│ modalities / legal effects │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│       constraint model      │
+│ logical / temporal /        │
+│ relational constraints     │
+└──────────────┬──────────────┘
+               │
+               ▼
+┌─────────────────────────────┐
+│          analysis           │
+│ SAT / UNSAT / implication / │
+│ conflict cores / examples  │
+└─────────────────────────────┘
 ```
 
-Prefer:
+These layers should not be collapsed merely because doing so produces less code.
+
+At the same time, layers should only become concrete when they solve an observed problem.
+
+---
+
+# The XML is not the law model
+
+The XML published by **Gesetze im Internet** is a structured document format.
+
+Its elements describe an external representation designed for publication and automated processing.
+
+For example, the same external `<norm>` concept can represent things with substantially different legal roles:
+
+```text
+document metadata
+Eingangsformel
+Präambel
+Artikel
+other structural units
+```
+
+Therefore:
+
+```text
+GII <norm>
+```
+
+should not automatically become:
 
 ```rust
-struct Paragraph {
-    id: ParagraphId,
-    ...
-}
+struct LegalNorm { ... }
 ```
 
-and derive the other forms from `Paragraph::id`.
+Those are different concepts.
 
-Similarly, a cross-reference should ideally not be only arbitrary text:
+A useful distinction is:
 
-```rust
-"§ 15 Absatz 2"
+```text
+GiiNorm
 ```
 
-if the model can instead contain something like:
+for an external document-format object, versus:
 
-```rust
-Reference<Paragraph>
+```text
+LegalNorm
 ```
 
-whose displayed form is generated later.
+for a semantic proposition extracted or modeled from legal content.
 
-The exact type system will evolve as the project encounters real German law.
+The names should make that distinction difficult to forget.
 
-The law should determine which distinctions are necessary.
+---
+
+# Source fidelity still matters
+
+The semantic ambitions of the project make provenance more important, not less.
+
+Every modeled fact should ideally remain traceable back to the source from which it was derived.
+
+Conceptually:
+
+```text
+constraint
+    │
+    ▼
+semantic norm
+    │
+    ▼
+legal provision
+    │
+    ▼
+source document location
+    │
+    ▼
+source snapshot
+```
+
+For example, an analysis result should eventually be able to say:
+
+```text
+Unsatisfiable modeled constraints:
+
+  GG::ArtX::Abs2
+  SomeLaw::§Y::Abs4
+  OtherLaw::§Z::Abs1
+
+Assumptions:
+
+  date = ...
+  actor = ...
+  condition C = true
+  interpretation D = ...
+
+Derived constraints:
+
+  ...
+
+No assignment satisfies all listed constraints.
+```
+
+The source path should be inspectable all the way back to the legal text.
 
 ---
 
 # What is authoritative?
 
-There are several different notions of "source of truth" and they should not be conflated.
+There are several different meanings of "source of truth".
+
+They should not be conflated.
 
 ## Legal authority
 
-The project does **not** determine what German law is.
+This repository does not determine what German law is.
 
 For federal legislation, promulgation in the **Bundesgesetzblatt** is legally authoritative.
 
-## External machine-readable comparison source
+The project is an analytical and representational system, not a source of legal authority.
 
-For initial development, the main practical external source is:
+## Consolidated external source
 
-**Gesetze im Internet**
-
-It provides consolidated versions of German federal statutes and regulations in formats including:
-
-- HTML
-- PDF
-- EPUB
-- XML
-
-The XML representation is specifically intended for automated processing.
-
-Its XML structure is described by the published `gii-norm.dtd`.
-
-Gesetze im Internet also publishes a daily XML table of contents.
-
-## Internal project authority
-
-Inside this repository, the intended authoritative representation is the Rust domain model.
-
-Therefore:
+For practical development, **Gesetze im Internet** is useful because it provides consolidated federal statutes and regulations in formats including:
 
 ```text
-Bundesgesetzblatt
-       │
-       │ legal authority
-       ▼
-German law
-       │
-       │ consolidated external representation
-       ▼
-Gesetze im Internet XML
-       │
-       │ regression/comparison target
-       ▼
-┌───────────────────────────┐
-│     Rust domain model     │
-└───────────────────────────┘
-       │
-       │ deterministic rendering
-       ▼
-generated XML
+HTML
+PDF
+EPUB
+XML
 ```
 
-The important comparison is:
+The XML is specifically intended for automated processing.
+
+Gesetze im Internet also publishes:
 
 ```text
-normalize(render(model))
-    ==
-normalize(reference_xml)
+gii-toc.xml
 ```
 
-The published XML is therefore primarily an **oracle/regression target**, not the ontology from which the internal model must blindly inherit every implementation detail.
+as a machine-readable catalog of the available laws and regulations.
+
+The catalog contains links to downloadable XML archives.
+
+The XML documents reference the public:
+
+```text
+gii-norm.dtd
+```
+
+which describes their external document structure.
+
+## Internal project representations
+
+Inside this repository there may eventually be several authoritative representations for different purposes.
+
+For example:
+
+```text
+source snapshot
+    authoritative for:
+    "what external artifact did we retrieve?"
+
+document model
+    authoritative for:
+    "how did we structurally interpret that artifact?"
+
+legal model
+    authoritative for:
+    "what legal objects did we model?"
+
+semantic model
+    authoritative for:
+    "what legal meaning did we explicitly encode?"
+
+constraint model
+    derived from semantic model
+```
+
+The project should avoid pretending that one representation answers all of these questions.
 
 ---
 
-# Why not use the XML itself as the model?
+# Source discovery
 
-The XML is an external serialization format.
-
-Its structure may contain distinctions required for publishing, formatting, compatibility or document exchange that are not necessarily the best domain abstractions for working with law.
-
-Therefore the initial architecture should distinguish:
+The Gesetze-im-Internet catalog provides a useful machine-readable entry point:
 
 ```text
-legal/domain structure
-        ↓
-document structure
-        ↓
-XML serialization
+https://www.gesetze-im-internet.de/gii-toc.xml
 ```
 
-Sometimes these layers will map almost one-to-one.
+Conceptually:
 
-Sometimes they will not.
+```text
+gii-toc.xml
+     │
+     │ discover law
+     ▼
+<item>
+  <title>...</title>
+  <link>.../xml.zip</link>
+</item>
+     │
+     ▼
+download XML archive
+     │
+     ▼
+extract source XML
+     │
+     ▼
+record provenance + checksum
+```
 
-The project should not introduce extra layers merely for architectural purity, but it should also not assume that an XML element automatically deserves to become a fundamental legal domain type.
+For the Grundgesetz, the catalog identifies the XML archive associated with the law.
+
+The project should discover such URLs through the catalog rather than maintaining avoidable handwritten download mappings.
 
 ---
 
-# No parallel handwritten legal documentation
+# Source snapshots
 
-The project should avoid this:
+External source material should be preserved as snapshots.
 
-```text
-law.rs          ← one description
-law.xml         ← manually maintained second description
-law.md          ← manually maintained third description
-references.csv  ← manually maintained fourth description
-```
-
-Those representations can silently diverge.
-
-Instead:
+For example:
 
 ```text
-law.rs
-  │
-  ├──► XML
-  ├──► text
-  ├──► HTML
-  ├──► reference index
-  └──► documentation
+reference/
+└── gesetze-im-internet/
+    ├── gii-toc.xml
+    ├── dtd/
+    │   └── 1.01/
+    │       └── gii-norm.dtd
+    │
+    └── gg/
+        ├── source.xml
+        └── source.toml
 ```
 
-Generated files should normally be recognizable as generated and should not be edited manually.
+`source.toml` might record:
 
-README files and architectural documentation are exceptions because they explain the project rather than encode individual legal provisions.
+```toml
+[source]
+provider = "Gesetze im Internet"
+catalog_url = "https://www.gesetze-im-internet.de/gii-toc.xml"
+download_url = "..."
+
+[document]
+jurabk = "GG"
+doknr = "BJNR000010949"
+builddate = "..."
+ausfertigung_datum = "1949-05-23"
+stand = "..."
+
+[snapshot]
+retrieved_at = "..."
+archive_sha256 = "..."
+xml_sha256 = "..."
+modified = false
+```
+
+Fields that can be parsed from the XML should eventually be generated rather than manually synchronized.
 
 ---
 
-# Scope
+# Core design rule
 
-## Initial scope
+A central rule remains:
 
-Start small enough that the complete model can be understood.
+> Represent a fact once at the most appropriate layer and derive other representations from it whenever practical.
 
-A reasonable first target is the **Grundgesetz**.
-
-The initial project should focus primarily on:
-
-1. document structure;
-2. exact legal text;
-3. stable identifiers;
-4. hierarchy;
-5. cross-references;
-6. metadata required to reproduce the reference XML;
-7. deterministic XML generation;
-8. validation;
-9. developer navigation.
-
-The first milestone is **not** automated constitutional interpretation.
-
-## Initial legal universe
-
-Initially:
+Avoid:
 
 ```text
-current consolidated federal law
+article number in legal model
+article number in XML renderer
+article number in semantic model
+article number in reference database
 ```
 
-Not yet:
+Prefer relationships between typed representations.
+
+For example:
+
+```rust
+struct Article {
+    id: ArticleId,
+    ...
+}
+```
+
+and:
+
+```rust
+struct LegalNorm {
+    source: ProvisionRef,
+    ...
+}
+```
+
+The semantic norm refers back to the legal structure instead of independently reproducing the source identifier.
+
+Likewise, a constraint should retain provenance:
+
+```rust
+struct Constraint {
+    source: SemanticNormId,
+    ...
+}
+```
+
+This allows generated analysis to remain traceable.
+
+---
+
+# Exact legal text
+
+Legal wording must obviously exist somewhere.
+
+That is domain content, not duplicated documentation.
+
+For example:
+
+```rust
+LegalText::new(
+    "Die Würde des Menschen ist unantastbar."
+)
+```
+
+contains actual source material.
+
+The undesirable situation is:
 
 ```text
-all historical versions
-all Länder law
-EU law
-court decisions
-administrative rules
-private standards
-legal commentary
-automated legal advice
+text manually copied into structural model
++
+text independently copied into semantic model
++
+text independently copied into XML fixture
++
+text independently copied into documentation
 ```
 
-These may become separate domains later.
+where these copies can silently diverge.
 
----
-
-# Non-goals
-
-At least initially, this project is not intended to:
-
-- replace the Bundesgesetzblatt;
-- replace Gesetze im Internet;
-- provide legal advice;
-- determine the legally correct interpretation of disputed provisions;
-- automatically decide constitutional questions;
-- convert every sentence into a Boolean function;
-- pretend natural-language law is completely executable;
-- create a general legal AI system;
-- model every German law at once;
-- reproduce an XML schema internally merely for the sake of reproducing it;
-- create a GUI before the underlying model is useful.
-
----
-
-# Repository philosophy
-
-The repository should remain understandable when opened directly in VS Code.
-
-Prefer ordinary Rust mechanisms where they express the domain adequately.
-
-Introduce abstraction only when repeated concrete legal structures show that it is useful.
-
-In particular:
-
-> Do not design an elaborate legal DSL before enough ordinary Rust exists to reveal what the DSL needs to remove.
-
----
-
-# Possible workspace structure
-
-An initial Cargo workspace might eventually look like:
+The preferred relationship is:
 
 ```text
-de-law-rs/
-├── Cargo.toml
-├── README.md
-│
-├── crates/
-│   ├── legal-core/
-│   │   └── src/
-│   │
-│   ├── legal-xml/
-│   │   └── src/
-│   │
-│   ├── legal-check/
-│   │   └── src/
-│   │
-│   └── legal-cli/
-│       └── src/
-│
-├── laws/
-│   └── gg/
-│       └── src/
-│
-├── reference/
-│   └── gesetze-im-internet/
-│       └── gg/
-│
-└── tests/
+source / modeled legal text
+          │
+          ├──► document rendering
+          ├──► developer view
+          ├──► semantic references
+          └──► analysis provenance
 ```
-
-This is only an initial direction.
-
-A single crate is preferable until multiple crates solve an actual problem.
 
 ---
 
-# Domain model
+# Structural model
 
-The domain model should be built incrementally from real law.
+The first internal model will probably still be primarily structural.
 
-The first version may contain fairly structural concepts such as:
+For example:
 
 ```rust
 struct Law {
+    id: LawId,
     metadata: LawMetadata,
     units: Vec<StructuralUnit>,
 }
@@ -385,1055 +672,1248 @@ struct Article {
 }
 ```
 
-These types should not be treated as final.
+These types are not intended as a final ontology.
 
-Real statutes should be used to discover where the model is insufficient.
+They provide stable objects to which semantic representations can later refer.
 
-When the law forces a distinction, refine the model.
-
----
-
-# Make distinctions explicit
-
-Avoid excessive primitive values when the domain distinguishes their meanings.
-
-Instead of:
-
-```rust
-u32
-String
-String
-bool
-```
-
-consider types such as:
-
-```rust
-ArticleNumber
-ParagraphNumber
-ProvisionId
-LawId
-Heading
-LegalText
-Reference
-EffectiveDate
-```
-
-when those distinctions actually provide value.
-
-For example:
-
-```rust
-struct ArticleId(...);
-struct ParagraphId(...);
-```
-
-can prevent accidental substitution even if both eventually contain similar primitive representations.
+Real statutes should reveal which distinctions are necessary.
 
 ---
 
-# Avoid Boolean collapse
+# Legal relationships
 
-A Boolean is appropriate when the domain really contains exactly two relevant states.
+References should become relationships where practical.
 
-It should not silently collapse:
+Instead of representing only:
 
 ```text
-true
-false
+"Artikel 20 Absatz 3"
+```
+
+the project should eventually support something conceptually like:
+
+```rust
+Reference<Provision>
+```
+
+or:
+
+```rust
+struct ProvisionRef {
+    law: LawId,
+    provision: ProvisionId,
+}
+```
+
+This supports:
+
+```text
+go to definition
+find references
+reverse-reference lookup
+dependency traversal
+broken-reference detection
+semantic dependency graphs
+```
+
+Visible citation text can still be preserved or generated when exact reproduction matters.
+
+---
+
+# Semantic model
+
+A structural provision is not necessarily one semantic rule.
+
+One sentence may express multiple legal propositions.
+
+Several provisions may jointly define one operative rule.
+
+The semantic layer therefore should not be forced into a one-to-one relationship with document elements.
+
+A possible experimental representation might look like:
+
+```rust
+struct LegalNorm {
+    id: LegalNormId,
+    source: SourceSpan,
+    applicability: Condition,
+    effect: LegalEffect,
+}
+```
+
+with effects such as:
+
+```rust
+enum LegalEffect {
+    Obligation(Action),
+    Prohibition(Action),
+    Permission(Action),
+    Definition(Definition),
+    Competence(Competence),
+}
+```
+
+This is intentionally incomplete.
+
+Real legal material may require distinctions such as:
+
+```text
+Tatbestand
+Rechtsfolge
+Definition
+Ausnahme
+Ermächtigung
+Zuständigkeit
+Frist
+Verweisung
+Fiktion
+Vermutung
+Inkrafttreten
+Außerkrafttreten
+condition
+actor
+object
+recipient
+legal status
+procedural step
+```
+
+These should be introduced because the corpus requires them, not because a comprehensive legal ontology sounds attractive.
+
+---
+
+# Conditions
+
+Conditions will likely become a major part of the semantic layer.
+
+Conceptually:
+
+```rust
+enum Condition {
+    Fact(FactPredicate),
+    All(Vec<Condition>),
+    Any(Vec<Condition>),
+    Not(Box<Condition>),
+    Temporal(TemporalCondition),
+    Reference(SemanticReference),
+}
+```
+
+But such a representation should not be committed to before concrete examples reveal its requirements.
+
+Natural-language applicability conditions can be difficult.
+
+The model must be allowed to say:
+
+```text
+not modeled
 unknown
-not applicable
-not yet determined
-conflicting information
+ambiguous
+interpretation-dependent
 ```
 
-into:
+rather than silently choosing an interpretation.
+
+---
+
+# Modalities
+
+Legal effects are not adequately represented by ordinary Boolean values.
+
+At minimum, the project may need distinctions such as:
 
 ```rust
-bool
-```
-
-When necessary, use explicit enums:
-
-```rust
-enum Finding {
-    Established,
-    NotEstablished,
-    Unknown,
+enum Modality {
+    Required,
+    Forbidden,
+    Permitted,
 }
 ```
 
-The same principle applies throughout the project:
+Even this is likely incomplete.
 
-> If the law distinguishes two things, the model should not accidentally identify them merely because representing them separately requires more code.
+Potential later distinctions include:
+
+```text
+power
+competence
+entitlement
+immunity
+liability
+legal consequence
+procedural possibility
+constitutive rule
+```
+
+The project should resist reducing these to the same concept merely because a particular solver understands only Boolean formulas.
 
 ---
 
-# References should become relationships
+# Lowering semantics to constraints
 
-A legal cross-reference has at least two aspects:
+The semantic model should not necessarily be identical to the solver representation.
 
-1. textual appearance;
-2. relationship to another legal object.
-
-The project should eventually be able to represent:
+Instead, use an explicit lowering step:
 
 ```text
-Art. X refers to Art. Y
+legal semantic model
+        │
+        │ lower
+        ▼
+formal constraint representation
+        │
+        ▼
+solver / analyzer
 ```
 
-as an actual relationship.
-
-For example, conceptually:
+Conceptually:
 
 ```rust
-struct Reference<T> {
-    target: Id<T>,
-}
+fn lower_to_constraints(
+    norm: &LegalNorm,
+    context: &LegalContext,
+) -> Result<ConstraintSet, LoweringError>;
 ```
 
-instead of only:
-
-```rust
-String
-```
-
-Rendering can later produce:
+This separation matters because the project may eventually experiment with different formalisms:
 
 ```text
-Artikel 20 Absatz 3
+SAT
+SMT
+Datalog
+temporal logic
+deontic logic
+graph analysis
+custom constraint propagation
 ```
 
-or the corresponding XML.
-
-This should eventually enable:
-
-```text
-Go to definition
-Find all references
-Dependency graphs
-Broken-reference checks
-```
-
-Not every reference will necessarily be statically resolvable at Rust compile time. Project validation may therefore supplement the Rust type checker.
+German law should not be declared equivalent to whichever formalism happens to be used first.
 
 ---
 
-# Compile-time checks vs project validation
+# Satisfiability
 
-Rust should be used for constraints Rust can honestly enforce.
-
-Examples:
-
-## Good compile-time candidates
-
-- incompatible identifier types;
-- enum exhaustiveness;
-- construction of impossible variants;
-- required fields;
-- generic constraints;
-- API misuse;
-- explicit error handling.
-
-## Good validation-test candidates
-
-- duplicate provision IDs;
-- reference targets that do not exist in the loaded corpus;
-- numbering inconsistencies;
-- invalid effective-date relationships;
-- XML structure constraints;
-- generated output differences;
-- corpus-wide dependency checks.
-
-Do not force a runtime/corpus property into the type system merely to claim that it is "compile-time checked."
-
----
-
-# Rendering
-
-The model should support multiple generated representations.
+One useful analysis is whether a modeled set of applicable constraints has any satisfying state.
 
 Conceptually:
 
 ```text
-              Domain Model
-                   │
-       ┌───────────┼────────────┐
-       ▼           ▼            ▼
-      XML         text         HTML
+constraints
+    │
+    ▼
+ solver
+  │   │
+  │   └───────────────┐
+  ▼                   ▼
+ SAT                 UNSAT
+  │                   │
+  ▼                   ▼
+model / example    conflict core
 ```
 
-Formatting should therefore be separate from legal semantics.
+A `SAT` result may produce an example state compatible with the modeled constraints.
+
+An `UNSAT` result should ideally produce or help identify a small conflicting set.
 
 For example:
 
-```rust
-trait XmlRender {
-    fn render_xml(
-        &self,
-        writer: &mut XmlWriter,
-    ) -> Result<(), XmlError>;
-}
+```text
+UNSAT
+
+Relevant modeled norms:
+
+  N14 derived from § X Abs. 2
+  N27 derived from § Y Abs. 4
+  N31 derived from § Z Abs. 1
+
+Assumptions:
+
+  P = true
+  date = ...
+  actor = ...
+
+Conflict:
+
+  N14 requires Q
+  N27 forbids Q
+  N31 makes both simultaneously applicable
 ```
 
-or serialization may be derived/generated when appropriate.
+This is considerably more useful than:
 
-`Display` may be useful for convenient human-readable output, but it should not necessarily define the canonical XML representation.
+```text
+law inconsistent
+```
 
 ---
 
-# Why the fields should be load-bearing
+# Unsatisfiable cores
 
-Suppose an article is represented as:
+For large corpora, detecting inconsistency is not enough.
 
-```rust
-struct Article {
-    id: ArticleId,
-    heading: Option<Heading>,
-    paragraphs: Vec<Paragraph>,
-}
+If 20,000 constraints are loaded and the system returns:
+
+```text
+UNSAT
 ```
 
-Then XML rendering must obtain those values from those fields.
+the result is not yet useful.
 
-It should not separately contain:
+The analysis should attempt to identify a smaller subset sufficient for the contradiction.
 
-```rust
-write("<article id=\"1\">...");
+Conceptually:
+
+```text
+all constraints
+      │
+      ▼
+    UNSAT
+      │
+      ▼
+unsatisfiable core
+      │
+      ▼
+source provisions
 ```
 
-with another independently maintained copy of the identifier.
+The eventual developer experience might resemble:
 
-Removing or changing a field should therefore have an observable effect on the generated representation.
+```text
+cargo law explain-conflict conflict-42
+```
 
-This is intentional.
+with output showing:
 
-The structure should matter.
+```text
+source provisions
+semantic norms
+assumptions
+lowered constraints
+minimal or reduced conflicting set
+```
 
 ---
 
-# Serialization strategy
+# Time matters
 
-Initially evaluate two approaches.
+Legal rules often change over time.
 
-## Serde-based serialization
+A system that ignores temporal applicability may report false conflicts.
 
-Serde can derive serialization implementations from Rust structs and enums.
-
-This may provide a concise mapping where the XML structure matches the Rust structure naturally.
-
-Potential advantage:
-
-```rust
-#[derive(Serialize)]
-struct Something {
-    ...
-}
-```
-
-Potential problem:
-
-The Gesetze-im-Internet XML format may contain structural details for which forcing the domain model to match Serde/XML conventions would distort the model.
-
-## Explicit XML renderer
-
-Use an XML writer such as `quick-xml` to render the domain model explicitly.
-
-Potential advantage:
+For example:
 
 ```text
-domain model
-    │
-    ▼
-XML adapter
-    │
-    ▼
-exact external schema
+Rule A applies until 2025-12-31.
+
+Rule B applies from 2026-01-01.
 ```
 
-The adapter controls serialization without making XML quirks fundamental domain concepts.
+These are not simultaneous constraints.
 
-The XML adapter may contain formatting/schema knowledge.
+Similarly:
 
-It should not contain duplicated legal facts.
+```text
+action required before T
+action forbidden until T
+```
 
-The correct choice can differ between structures. There is no requirement to use one technique everywhere.
+may or may not be satisfiable depending on exact timing.
+
+Therefore time is likely to become a first-class concern:
+
+```text
+effective dates
+expiry dates
+deadlines
+events
+ordering
+duration
+transition rules
+```
+
+Historical versioning does not need to be solved immediately, but the architecture should avoid making it impossible later.
 
 ---
 
-# Official XML as a golden test
+# Sequence matters
 
-For each modeled law, keep an external reference snapshot.
+Some legal processes consist of ordered states.
 
-Example:
-
-```text
-reference/
-└── gesetze-im-internet/
-    └── gg/
-        ├── source.xml
-        └── source.json
-```
-
-The metadata file might record:
+For example:
 
 ```text
-retrieval date
-source identifier
-published stand/version information
-checksum
-normalization rules
+application
+    ↓
+review
+    ↓
+approval
+    ↓
+action permitted
 ```
 
-Then:
+Two rules that appear contradictory in an atemporal representation may be compatible when sequencing is modeled.
 
-```rust
-#[test]
-fn generated_gg_matches_reference() {
-    let model = gg::law();
+Therefore:
 
-    let generated =
-        render_xml(&model).expect("rendering failed");
-
-    let expected =
-        load_reference_xml("gg");
-
-    assert_eq!(
-        normalize_xml(&generated),
-        normalize_xml(&expected),
-    );
-}
+```text
+simultaneous satisfiability
 ```
 
-This becomes one of the project's central invariants.
+and:
+
+```text
+existence of a valid sequence of states
+```
+
+are different questions.
+
+This may eventually require transition-system or temporal reasoning rather than ordinary SAT alone.
+
+---
+
+# Definitions matter
+
+Legal definitions influence many other provisions.
+
+A definition should eventually be represented as something more structured than arbitrary text when doing so is justified.
+
+For example:
+
+```text
+Definition D
+      │
+      ├── used by N1
+      ├── used by N2
+      └── used by N3
+```
+
+Changing the modeled interpretation of `D` may alter satisfiability elsewhere.
+
+This allows analysis such as:
+
+```text
+which conclusions depend on this definition?
+
+which norms become applicable if this concept is interpreted broadly?
+
+which conflicts disappear under another admissible interpretation?
+```
+
+The system should report such dependencies rather than hiding them.
+
+---
+
+# Interpretations and assumptions
+
+Formalization necessarily introduces assumptions.
+
+Those assumptions should be explicit and inspectable.
+
+For example:
+
+```text
+Assumption A1:
+"unverzüglich" modeled here as deadline <= N days
+
+Assumption A2:
+definition D interpreted as ...
+
+Assumption A3:
+provisions X and Y both applicable
+
+Assumption A4:
+event E occurred before date T
+```
+
+The analysis result should depend visibly on those assumptions.
+
+Ideally:
+
+```text
+result
+  │
+  ├── source norms
+  ├── explicit facts
+  ├── interpretation assumptions
+  └── solver assumptions
+```
+
+This is important for legal honesty.
+
+A hidden modeling choice should not masquerade as a conclusion of the statute.
+
+---
+
+# Unknown is a valid result
+
+The project should not force every question into:
+
+```text
+true
+false
+```
+
+Possible results may include:
+
+```text
+satisfied
+violated
+unknown
+not applicable
+underspecified
+interpretation-dependent
+unsupported by current model
+```
+
+Likewise, the model should distinguish:
+
+```text
+the constraints are satisfiable
+```
+
+from:
+
+```text
+the implementation was unable to determine satisfiability
+```
+
+and:
+
+```text
+the semantic representation is incomplete
+```
+
+These are different states.
+
+---
+
+# Compile-time checks vs validation vs formal analysis
+
+Different mechanisms should solve different classes of problems.
+
+## Rust type system
+
+Good candidates include:
+
+```text
+incompatible identifier types
+required fields
+enum exhaustiveness
+invalid API use
+construction restrictions
+generic constraints
+```
+
+## Project validation
+
+Good candidates include:
+
+```text
+duplicate provision IDs
+broken references
+numbering inconsistencies
+invalid hierarchy
+missing source provenance
+invalid effective-date relationships
+```
+
+## Formal analysis
+
+Good candidates may include:
+
+```text
+joint satisfiability
+logical implication
+constraint redundancy
+incompatible obligations
+unreachable conditions
+temporal impossibility
+counterexample generation
+```
+
+Do not force runtime or corpus-wide properties into the type system merely to call them "compile-time checked".
+
+Do not force semantic legal questions into the XML validator.
+
+Use the appropriate mechanism for each layer.
+
+---
+
+# Generated representations
+
+The internal models may generate familiar external representations:
+
+```text
+                  Legal model
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+         XML          text         HTML
+```
+
+and analytical representations:
+
+```text
+                Semantic model
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+    constraint IR   graph       diagnostics
+          │
+          ▼
+       solver
+```
+
+Generated representations should remain clearly derived.
+
+They should not become independently maintained copies of legal facts.
+
+---
+
+# XML round-tripping
+
+XML reproduction remains a valuable test.
+
+Conceptually:
+
+```text
+model
+  │
+  ▼
+render XML
+  │
+  ▼
+normalize
+  │
+  ▼
+compare with reference snapshot
+```
+
+The comparison should help establish that the structural representation has not accidentally lost external document information.
+
+However, XML equality does not prove semantic correctness.
+
+Two separate questions must remain separate:
+
+```text
+Can we reproduce the source representation?
+```
+
+and:
+
+```text
+Have we modeled the legal meaning correctly?
+```
+
+Passing the first test does not imply the second.
 
 ---
 
 # Normalization
 
-Byte-for-byte equality may not always represent meaningful equality.
+Byte-for-byte XML equality may be too strict where differences are semantically irrelevant.
 
-Potential irrelevant differences can include:
+Potential normalization rules may include:
 
-- indentation;
-- newline style;
-- XML declaration details;
-- attribute ordering where semantically irrelevant;
-- insignificant whitespace.
-
-Therefore comparison should use an explicitly defined normalization process.
-
-However:
-
-> Never normalize away a difference merely because it makes a failing test disappear.
+```text
+newline normalization
+indentation normalization
+XML declaration handling
+attribute ordering where irrelevant
+insignificant whitespace
+```
 
 Every normalization rule should have a documented reason.
 
-Ideally provide both:
+Never normalize away a difference merely because it makes a failing test disappear.
+
+Ideally debugging can show both:
 
 ```text
-semantic/normalized diff
 raw diff
+normalized diff
 ```
-
-when debugging.
 
 ---
 
-# Reference XML is a test oracle, not hidden input
+# Reference fixtures are not implementation input
 
-The model should not secretly load the reference XML at runtime and then emit it again.
+The external XML fixture must not secretly become the generated output.
 
-That would satisfy:
+This would be meaningless:
 
 ```text
-generated XML == reference XML
+load reference XML
+      ↓
+return reference XML
+      ↓
+test says generated XML matches
 ```
 
-without demonstrating that the Rust structure is load-bearing.
+A useful invariant is:
 
-A useful rule is:
+> The modeled representation must be able to generate its outputs without reading the comparison fixture.
 
-> The generated output must be reconstructible from the modeled law and renderer without reading the comparison fixture.
-
-Fixtures exist to test the implementation.
+Fixtures test the implementation.
 
 They are not the implementation.
 
 ---
 
-# Exact statutory text
+# Repository philosophy
 
-The legal wording itself must obviously exist somewhere.
+The repository should remain understandable when opened directly in VS Code.
 
-That is not "duplicated documentation."
+Prefer ordinary Rust mechanisms where they express the domain adequately.
 
-It is domain content.
+Use:
+
+```text
+struct
+enum
+trait
+Option<T>
+Result<T, E>
+newtypes
+generics
+```
+
+before inventing custom language machinery.
+
+Introduce abstraction after repeated concrete legal examples reveal what the abstraction preserves.
+
+In particular:
+
+> Do not design a comprehensive legal DSL before ordinary representations reveal what such a DSL would actually need to express.
+
+---
+
+# Possible initial repository
+
+Start with one crate.
+
+```text
+de-law-rs/
+├── Cargo.toml
+├── Cargo.lock
+├── rust-toolchain.toml
+├── README.md
+├── justfile
+│
+├── src/
+│   ├── lib.rs
+│   └── main.rs
+│
+├── examples/
+│   └── inspect_xml.rs
+│
+├── tests/
+│   └── reference_xml.rs
+│
+├── scripts/
+│   ├── fetch-toc.sh
+│   ├── fetch-law.sh
+│   └── check.sh
+│
+└── reference/
+    └── gesetze-im-internet/
+        ├── gii-toc.xml
+        ├── dtd/
+        │   └── 1.01/
+        │       └── gii-norm.dtd
+        └── gg/
+            ├── source.xml
+            └── source.toml
+```
+
+Do not create a large workspace before actual code demonstrates that multiple crates improve the project.
+
+---
+
+# Possible later architecture
+
+If boundaries become real, the repository may eventually separate concerns such as:
+
+```text
+crates/
+├── legal-source/
+├── legal-document/
+├── legal-core/
+├── legal-semantics/
+├── legal-constraints/
+├── legal-analysis/
+├── legal-xml/
+└── legal-cli/
+```
+
+These names are illustrative.
+
+The project should not create these crates merely because this diagram exists.
+
+---
+
+# Initial tooling
+
+The first repository should support:
+
+```text
+cargo check
+cargo test
+cargo fmt
+cargo clippy
+```
+
+A small task runner such as `just` can provide convenience:
+
+```text
+just check
+just fetch-law gg
+just inspect-law gg
+just test
+```
+
+A custom `cargo law` command can wait until there is enough behavior to justify it.
+
+---
+
+# Source acquisition workflow
+
+The source pipeline should become reproducible early.
+
+```text
+download gii-toc.xml
+        ↓
+discover requested law
+        ↓
+read XML archive URL
+        ↓
+download archive
+        ↓
+record archive checksum
+        ↓
+extract XML
+        ↓
+record XML checksum
+        ↓
+parse source metadata
+        ↓
+store snapshot
+```
 
 For example:
 
-```rust
-Sentence::new(
-    "Die Würde des Menschen ist unantastbar."
-)
-```
-
-contains actual legal content.
-
-The distinction is:
-
 ```text
-one stored legal text
-→ many generated views
+just fetch-law gg
 ```
 
-versus:
-
-```text
-independently maintained text in Rust
-+ independently maintained XML text
-+ independently maintained documentation text
-```
-
-Only the latter is unwanted duplication.
+should eventually be sufficient to update the Grundgesetz reference snapshot.
 
 ---
 
-# Developer experience
+# XML inspection before modeling
 
-Rust is used partly because the project should work well with normal developer tools.
+Before building a detailed Rust model, inspect the real source.
 
-With VS Code and rust-analyzer, the intended experience includes:
-
-- completion;
-- go to definition;
-- find all references;
-- type information;
-- diagnostics;
-- refactoring;
-- code formatting;
-- Clippy;
-- symbol search;
-- generated Rust documentation;
-- normal Git integration.
-
-The legal corpus should increasingly become explorable using these ordinary developer affordances.
-
----
-
-# Rust learning philosophy
-
-Rust learning is a consequence of building the legal model.
-
-The project should not introduce Rust features merely to demonstrate Rust features.
-
-Instead:
+A small tool should answer questions such as:
 
 ```text
-legal modeling problem
-        ↓
-need a stronger representation
-        ↓
-learn the Rust mechanism that expresses it
+What element names occur?
+
+What attributes occur?
+
+How many <norm> elements are present?
+
+Which values appear in <enbez>?
+
+How are articles represented?
+
+How are headings represented?
+
+How is text mixed with inline markup?
+
+Where do references occur?
+
+How are footnotes represented?
+
+What does the DTD permit?
+
+Which structures occur only once?
+
+Which apparently optional structures are common?
 ```
 
-Examples:
+Possible usage:
 
 ```text
-different possible legal forms
-→ enum
-
-shared behavior
-→ trait
-
-possibly absent value
-→ Option<T>
-
-fallible transformation
-→ Result<T, E>
-
-different semantic IDs
-→ newtypes
-
-repeated safe construction syntax
-→ macro
-
-generic relationship
-→ generics
-
-state transition that should restrict operations
-→ possibly typestate
+cargo run -- inspect reference/gesetze-im-internet/gg/source.xml
 ```
 
-This keeps the project law-first rather than Rust-first.
+The first goal is empirical understanding of the corpus.
 
 ---
 
-# Domain-specific language
+# Structural implementation phase
 
-A DSL is not an initial requirement.
-
-Ordinary Rust should be used first.
-
-For example:
-
-```rust
-Article {
-    id: ArticleId::new(1),
-    heading: None,
-    paragraphs: vec![
-        ...
-    ],
-}
-```
-
-If this becomes repetitive and obscures the domain, an embedded Rust macro might later allow:
-
-```rust
-article! {
-    1 {
-        ...
-    }
-}
-```
-
-The macro would still construct the same ordinary typed Rust domain objects.
-
-Therefore:
-
-```text
-optional law-shaped DSL
-          ↓
-typed Rust domain model
-          ↓
-generated representations
-```
-
-The DSL is syntax convenience, not another source of truth.
-
----
-
-# Suggested implementation phases
-
-## Phase 0 — repository and tooling
-
-Create the smallest possible Rust project.
-
-Set up:
-
-```text
-cargo
-rustfmt
-clippy
-rust-analyzer
-Git
-```
-
-Do not design the entire architecture.
-
----
-
-## Phase 1 — inspect one real source
-
-Use the Grundgesetz as the first corpus.
-
-Download its current XML representation from Gesetze im Internet.
-
-Inspect:
-
-- document hierarchy;
-- metadata;
-- identifiers;
-- article representation;
-- text representation;
-- cross-references;
-- special cases;
-- the referenced DTD.
-
-Do not immediately assume every XML distinction belongs in the domain model.
-
----
-
-## Phase 2 — minimal structural model
-
-Implement only enough Rust types to represent a small section faithfully.
+After inspecting the XML, model a very small amount of law.
 
 For example:
 
 ```text
 Law
 Article
-Paragraph/Absatz if required
-Sentence/content
+Paragraph
 Heading
+LegalText
 Identifier
-Text
+Reference
 ```
 
-Manually construct perhaps one or two articles.
+Manually represent one or two provisions.
 
 Render them.
 
-Compare them with the corresponding XML fragment.
+Compare the result with the source fragment.
+
+Allow the first model to be inadequate.
+
+Its failures are evidence about which distinctions the project actually needs.
 
 ---
 
-## Phase 3 — complete one law structurally
+# Semantic research phase
 
-Extend the model until the complete Grundgesetz can be represented.
+Semantic experimentation should begin much earlier than full-corpus semantic modeling.
 
-At this stage the primary objective is:
-
-```text
-complete structured law
-→ deterministic XML
-→ successful comparison
-```
-
-Not advanced semantic interpretation.
-
----
-
-## Phase 4 — validation
-
-Introduce explicit invariants as they become apparent.
-
-Examples:
-
-```text
-IDs are unique
-required fields exist
-hierarchy is legal
-numbering is coherent
-references resolve where expected
-rendering succeeds
-generated XML matches fixture
-```
-
-Create useful error types rather than panicking where failure is a normal possibility.
-
----
-
-## Phase 5 — typed references
-
-Replace textual-only references with structured references where practical.
-
-Enable:
-
-```text
-reference validation
-reverse-reference lookup
-dependency traversal
-```
-
-Do not discard the ability to reproduce the exact visible citation text where that is relevant.
-
----
-
-## Phase 6 — developer views
-
-Generate useful representations from the same model:
-
-```text
-plain legal text
-HTML
-rustdoc-like documentation
-reference graphs
-structural tree
-search indexes
-```
-
-These are derived views.
-
-They should not become independent representations of the law.
-
----
-
-## Phase 7 — deeper legal semantics
-
-Only after the structural model is stable, investigate whether recurring legal constructs justify explicit domain types such as:
-
-```text
-Definition
-Tatbestand
-Rechtsfolge
-Ausnahme
-Ermächtigung
-Zuständigkeit
-Frist
-Verweisung
-Inkrafttreten
-```
-
-Do not assume in advance that every statute decomposes cleanly into these categories.
-
-Let the corpus determine how useful they are.
-
----
-
-## Phase 8 — additional laws
-
-Add another law specifically to challenge assumptions made while modeling the Grundgesetz.
-
-A second corpus is important because:
-
-> A model that perfectly represents one document may merely be an elaborate encoding of that document.
-
-Repeated structures across multiple laws are stronger candidates for reusable abstractions.
-
----
-
-# Editing workflow
-
-The desired long-term editing loop is:
-
-```text
-edit Rust legal structure
-        ↓
-cargo check
-        ↓
-domain validation
-        ↓
-render XML
-        ↓
-compare against reference
-        ↓
-inspect diff
-        ↓
-commit
-```
-
-Eventually this could become:
-
-```text
-cargo law check
-cargo law render gg
-cargo law diff gg
-cargo law refs GG::Art20
-```
-
-The exact CLI is not an initial priority.
-
----
-
-# Source update workflow
-
-When the external consolidated law changes:
-
-```text
-download new reference XML
-        ↓
-record provenance/checksum
-        ↓
-run comparison
-        ↓
-observe structural/textual differences
-        ↓
-modify Rust model
-        ↓
-checks pass again
-        ↓
-commit model + reference update
-```
-
-This creates a Git history that can eventually expose legal changes in a developer-readable form.
-
----
-
-# Potential future Git workflow
-
-A useful future convention may be:
-
-```text
-one legal source update
-≈
-one focused commit
-```
-
-Then Git history becomes another generated perspective on legal development.
-
-Possible future tooling:
-
-```text
-show provisions changed between two commits
-show references affected by a changed provision
-show generated XML diff
-show laws depending on a changed definition
-```
-
----
-
-# Source provenance
-
-Every external snapshot should retain enough metadata to answer:
-
-```text
-Where did this come from?
-When was it retrieved?
-Which law/version did it represent?
-What checksum did the downloaded artifact have?
-Was it modified before storage?
-```
-
-Source metadata should be machine-readable where practical.
+Use a handful of deliberately simple propositions.
 
 For example:
 
+```text
+N1:
+if P, X must do Q
+
+N2:
+if P, X must not do Q
+```
+
+Then encode:
+
+```text
+source
+  ↓
+semantic norm
+  ↓
+constraint
+  ↓
+solver
+```
+
+Verify that:
+
+```text
+without P:
+possibly satisfiable
+
+with P:
+unsatisfiable
+```
+
+Then add synthetic cases for:
+
+```text
+obligation + obligation
+obligation + prohibition
+permission + prohibition
+general rule + exception
+different subjects
+different dates
+deadline interaction
+definition dependency
+nested conditions
+cross-reference dependency
+sequential rules
+```
+
+These synthetic tests allow the semantic architecture to be explored without making premature claims about real statutory interpretation.
+
+---
+
+# Real-law semantic experiments
+
+After synthetic cases work, select unusually explicit legal provisions.
+
+The purpose is not initially to formalize the whole Grundgesetz.
+
+The purpose is to discover:
+
+```text
+what information disappears during formalization?
+
+what distinctions are required?
+
+what assumptions must be made?
+
+what cannot be faithfully represented?
+
+where does natural language resist decomposition?
+```
+
+Every such experiment should retain a direct source link to the modeled provision.
+
+---
+
+# Candidate semantic representation
+
+A possible direction:
+
 ```rust
-struct SourceSnapshot {
-    source: Source,
-    retrieved_at: DateTime,
-    checksum: Checksum,
-    declared_version: Option<String>,
+struct LegalNorm {
+    id: LegalNormId,
+    source: SourceSpan,
+    applicability: Condition,
+    effect: LegalEffect,
 }
 ```
 
-The exact representation can remain simple initially.
+with:
+
+```rust
+enum LegalEffect {
+    Obligation(Action),
+    Prohibition(Action),
+    Permission(Action),
+    Definition(Definition),
+    Competence(Competence),
+}
+```
+
+and perhaps:
+
+```rust
+struct Action {
+    actor: Actor,
+    predicate: ActionPredicate,
+    object: Option<LegalObject>,
+}
+```
+
+This is exploratory syntax.
+
+It is not a commitment to a universal model of law.
 
 ---
 
-# Primary external sources
+# Constraint representation
 
-## Gesetze im Internet
+The constraint layer may initially use a small intermediate representation.
 
-Primary practical source for consolidated current German federal laws and regulations.
+For example, conceptually:
 
-Used for:
-
-- XML reference output;
-- comparison fixtures;
-- structural investigation;
-- consolidated text;
-- metadata.
-
-The service is provided by the Federal Ministry of Justice / Federal Office of Justice environment and provides German legal norms for free use and reuse.
-
-Its XML format is specifically intended for automated processing.
-
-## Gesetze-im-Internet DTD
-
-The XML documents reference a public Document Type Definition:
-
-```text
-gii-norm.dtd
+```rust
+enum Constraint {
+    Requires(Fact),
+    Forbids(Fact),
+    Implies {
+        if_: Condition,
+        then: Box<Constraint>,
+    },
+    All(Vec<Constraint>),
+    Any(Vec<Constraint>),
+}
 ```
 
-Use it to understand and validate the expected external XML document structure.
+This representation may prove too weak almost immediately.
 
-It is an external serialization specification.
+That is acceptable.
 
-It is not automatically the project's internal domain ontology.
-
-## Gesetze-im-Internet XML table of contents
-
-A daily XML table of contents is available.
-
-This may later be useful for:
-
-```text
-discovering laws
-tracking external updates
-maintaining source metadata
-automated comparison
-```
-
-It is not needed for the first implementation.
-
-## Bundesgesetzblatt
-
-The Bundesgesetzblatt remains important as the legally authoritative promulgation source.
-
-Gesetze im Internet provides consolidated working versions; the two roles should remain distinct in the project documentation.
+The objective is to discover the necessary distinctions through concrete failures.
 
 ---
 
-# Copyright and licensing
+# Solvers
 
-German statutory material requires some care in repository licensing because different material may have different legal status.
+Do not choose the architecture around a solver prematurely.
 
-Under § 5 UrhG, German:
-
-- statutes;
-- regulations;
-- official decrees and notices;
-- court decisions;
-- officially authored headnotes
-
-do not enjoy copyright protection.
-
-Gesetze im Internet also states that the German legal norms it provides are available for free use and reuse.
-
-However, this should not be generalized to every external document associated with law.
-
-In particular, private standards referenced by legislation may remain copyrighted.
-
-Translations may also have separate usage conditions.
-
-Therefore the repository should distinguish:
+Potential tools may eventually include:
 
 ```text
-project-authored source code
-official statutory material
-third-party material
+SAT solver
+SMT solver
+Datalog engine
+custom graph algorithms
+temporal solver
+constraint programming
 ```
 
-rather than assuming one project license automatically governs everything.
-
-A possible approach is:
+An SMT solver may be especially useful when constraints involve:
 
 ```text
-LICENSE
-LICENSES/
-NOTICE.md
+integers
+dates
+ordering
+quantities
+equality
+logical implications
 ```
 
-with the main software license applying specifically to project-authored code and annotations.
+But a solver should remain downstream of the semantic representation.
 
-The precise project license can be chosen later.
+The legal domain model should not become a collection of solver-specific expressions unless evidence shows that this is genuinely useful.
 
 ---
 
-# Candidate Rust dependencies
+# Explanation is part of correctness
 
-Dependencies should be added only when they solve an immediate problem.
+A solver result without traceability is not sufficient.
 
-Likely candidates include:
-
-## `quick-xml`
-
-For XML reading/writing and possibly Serde-based XML serialization.
-
-Useful both for:
+The system should prefer:
 
 ```text
-reference XML inspection
-generated XML output
+UNSAT because:
+N12, N18 and N31 cannot all hold
 ```
 
-## `serde`
-
-Potentially useful for derived serialization and for project metadata.
-
-Whether the legal domain model itself should directly derive XML serialization should be determined experimentally rather than assumed.
-
-## Error-handling utilities
-
-A library such as `thiserror` may eventually be useful for explicit domain and rendering errors.
-
-A CLI may use a more application-oriented error layer separately.
-
-Exact dependency choices and versions should not be treated as architectural commitments.
-
----
-
-# Generated outputs
-
-Generated files should normally live outside the hand-authored domain representation.
-
-For example:
+over:
 
 ```text
-target/generated/
-├── gg.xml
-├── gg.txt
-├── gg.html
-└── refs.dot
+false
 ```
 
-or another clearly generated directory.
+Likewise:
 
-Generated files may optionally be committed if doing so materially improves diffing or archival use, but the repository should make clear that they are reproducible artifacts.
+```text
+SAT with example:
+...
+```
+
+is often more useful than merely:
+
+```text
+true
+```
+
+The developer should be able to navigate:
+
+```text
+solver result
+    ↓
+constraint
+    ↓
+semantic rule
+    ↓
+provision
+    ↓
+source text
+```
+
+Explanation is not merely a UI feature.
+
+For this project it is part of making analysis trustworthy.
 
 ---
 
 # Testing strategy
 
-The project should gradually develop several kinds of tests.
+The project should develop several classes of tests.
 
-## Unit tests
-
-For small domain operations:
+## Tooling tests
 
 ```text
-identifier formatting
-reference formatting
-constructors
-validation
-normalization
+project compiles
+formatting passes
+Clippy passes
+```
+
+## Source tests
+
+```text
+reference XML exists
+XML is well-formed
+checksum matches metadata
+expected law identifier is present
+DTD is available
 ```
 
 ## Structural tests
 
-For corpus-wide invariants:
-
 ```text
-unique IDs
-valid hierarchy
-resolved references
-expected ordering
+IDs are unique
+hierarchy is valid
+references resolve
+ordering is coherent
 ```
 
-## Golden/reference tests
-
-For generated external representations:
+## Rendering tests
 
 ```text
-Rust model
-→ XML
-→ normalized comparison
-→ reference XML
+modeled structure
+→ generated XML
+→ normalization
+→ reference comparison
+```
+
+## Semantic unit tests
+
+```text
+conditions compose correctly
+exceptions apply correctly
+modality distinctions survive lowering
+assumptions are preserved
+```
+
+## Constraint tests
+
+Synthetic examples should verify expected:
+
+```text
+SAT
+UNSAT
+implication
+non-implication
+conflict cores
+```
+
+## Provenance tests
+
+Every semantic rule used for real-law analysis should be traceable to:
+
+```text
+source provision
+source snapshot
+modeling assumptions
 ```
 
 ## Regression tests
 
-Whenever a bug is discovered, preserve a minimal example that would reproduce it.
+Whenever a bug or modeling failure is discovered, preserve a minimal example reproducing it.
 
 ---
 
-# A useful rule for every abstraction
+# Useful invariants
 
-Whenever a new type, trait, macro or layer is proposed, ask:
+Several invariants should guide the project.
 
-> What repeated distinction in the actual law or workflow does this abstraction preserve?
+## Source independence
 
-If the answer is unclear, the abstraction may be premature.
-
-The project is expected to evolve from concrete examples toward reusable structure rather than from an elaborate abstract schema toward the law.
-
----
-
-# A useful rule for duplication
-
-Ask:
-
-> If I change this legal fact, how many places must I manually update?
-
-The desired answer is normally:
+If the reference fixture is deleted:
 
 ```text
-one
+can the internal model still generate its derived representations?
 ```
 
-Everything else should follow through:
+Eventually the desired answer is:
 
 ```text
-types
-references
-rendering
-validation
-generated views
-tests
+yes
 ```
 
-or fail loudly.
+## Traceability
 
----
+For every derived formal constraint:
 
-# A useful rule for generated output
-
-Ask:
-
-> If I delete the reference XML fixture, can the Rust model still generate the complete law?
+```text
+can we identify why it exists and where it came from?
+```
 
 The desired answer is:
 
@@ -1441,35 +1921,719 @@ The desired answer is:
 yes
 ```
 
-Then ask:
+## Explicit assumptions
 
-> If I restore the reference XML, can the project prove or show where the generated representation differs?
+For every analysis result:
 
-Again:
+```text
+can we identify the assumptions required to obtain it?
+```
+
+The desired answer is:
 
 ```text
 yes
 ```
 
-That is the intended relationship between mechanism and comparison target.
+## No hidden duplication
+
+Ask:
+
+> If this legal fact changes, how many places must be manually updated?
+
+Normally the desired answer is:
+
+```text
+one
+```
+
+Everything else should either update mechanically or fail loudly.
 
 ---
 
-# Definition of done for the first milestone
+# Non-goals
 
-The first substantial milestone can be considered complete when:
+At least initially, this project is not intended to:
 
-- the Grundgesetz is represented entirely through the project's Rust model;
-- the exact required legal text exists only once in the load-bearing representation;
-- XML can be generated without reading the reference fixture;
-- generated XML matches the selected Gesetze-im-Internet XML after explicitly documented normalization;
-- identifiers are structured rather than scattered arbitrary strings where practical;
-- structural validation passes;
-- `cargo check` passes;
-- `cargo test` passes;
-- `cargo clippy` is reasonably clean;
-- navigating the project in VS Code is more useful than navigating the raw XML;
-- there is no manually maintained second copy of the law merely for rendering.
+```text
+replace the Bundesgesetzblatt
+replace Gesetze im Internet
+provide legal advice
+declare the legally correct interpretation of disputed language
+automatically decide constitutional questions
+predict court decisions
+turn every sentence into executable code
+assume every legal proposition has a Boolean interpretation
+claim that SAT means lawful
+claim that UNSAT means German law is contradictory
+formalize all German law at once
+model every historical version
+build a general legal AI system
+build a GUI before the underlying model is useful
+```
+
+The system analyzes explicitly modeled representations.
+
+It does not eliminate legal interpretation.
+
+---
+
+# Initial legal universe
+
+Start with:
+
+```text
+current consolidated federal law
+```
+
+and primarily:
+
+```text
+Grundgesetz
+```
+
+Not initially:
+
+```text
+all historical versions
+all Länder law
+EU law
+court decisions
+administrative rules
+private standards
+legal commentary
+```
+
+Those may later become related but separate domains.
+
+---
+
+# Why the Grundgesetz?
+
+The Grundgesetz is a useful initial source because:
+
+```text
+it is finite
+important
+well known
+structurally non-trivial
+available in machine-readable form
+rich in cross-references
+different from ordinary statutes in useful ways
+```
+
+It should not be assumed to represent all patterns found elsewhere in German legislation.
+
+A second law should later be selected specifically to challenge abstractions learned from the GG.
+
+---
+
+# Additional laws
+
+A model that perfectly represents one statute may simply be an elaborate encoding of that statute.
+
+Therefore:
+
+```text
+first law
+    ↓
+initial abstractions
+    ↓
+second structurally different law
+    ↓
+break assumptions
+    ↓
+refine abstractions
+```
+
+Repeated distinctions across unrelated laws are stronger candidates for reusable domain concepts.
+
+---
+
+# Suggested implementation phases
+
+## Phase 0 — repository and tooling
+
+Create the smallest usable Rust project.
+
+Set up:
+
+```text
+Cargo
+rustfmt
+Clippy
+rust-analyzer
+Git
+just or equivalent
+```
+
+Do not design the complete architecture.
+
+---
+
+## Phase 1 — reproducible source acquisition
+
+Implement:
+
+```text
+fetch gii-toc.xml
+discover law XML archive
+download archive
+extract XML
+record checksums
+record provenance
+download referenced DTD
+```
+
+The process should be repeatable.
+
+---
+
+## Phase 2 — source inspection
+
+Build a tiny XML inspector.
+
+Learn:
+
+```text
+document hierarchy
+metadata
+identifiers
+text representation
+inline markup
+footnotes
+cross-references
+special cases
+DTD structure
+```
+
+Do not map every XML element directly into the legal domain.
+
+---
+
+## Phase 3 — minimal structural representation
+
+Represent one or two provisions.
+
+Introduce only the types required by actual examples.
+
+Render them back into external forms where useful.
+
+---
+
+## Phase 4 — structural validation
+
+Add checks for:
+
+```text
+duplicate IDs
+missing references
+invalid hierarchy
+ordering
+required metadata
+```
+
+---
+
+## Phase 5 — source traceability
+
+Ensure internal objects can identify their source locations.
+
+For example:
+
+```text
+Article
+  ↓
+source norm
+  ↓
+document ID
+  ↓
+snapshot
+```
+
+This should exist before serious semantic analysis.
+
+---
+
+## Phase 6 — synthetic semantic experiments
+
+Create a tiny semantic model independent of the full GG.
+
+Test:
+
+```text
+conditions
+obligations
+prohibitions
+permissions
+exceptions
+temporal distinctions
+```
+
+Lower them into constraints.
+
+---
+
+## Phase 7 — first satisfiability analysis
+
+Connect a solver or small custom reasoning engine.
+
+Support something as small as:
+
+```text
+SAT
+UNSAT
+example assignment
+conflicting subset
+```
+
+Do not optimize for scale.
+
+---
+
+## Phase 8 — one real semantic example
+
+Choose a deliberately simple real provision.
+
+Model it manually.
+
+Document every interpretation choice.
+
+Trace every generated constraint to its source.
+
+---
+
+## Phase 9 — conflicting and interacting provisions
+
+Find or construct examples involving:
+
+```text
+multiple provisions
+references
+exceptions
+deadlines
+definitions
+```
+
+Determine whether the semantic model can explain their interaction.
+
+---
+
+## Phase 10 — challenge the architecture
+
+Add another law.
+
+Expect existing assumptions to fail.
+
+Refactor only when concrete repetition justifies it.
+
+---
+
+# Developer experience
+
+The project should become navigable using normal Rust tools.
+
+Desired capabilities include:
+
+```text
+completion
+go to definition
+find all references
+type information
+diagnostics
+refactoring
+rustdoc
+symbol search
+Git history
+```
+
+Eventually, legal navigation should feel increasingly like software navigation.
+
+For example:
+
+```text
+GG::Art20
+```
+
+could expose:
+
+```text
+source text
+document metadata
+incoming references
+outgoing references
+semantic norms
+derived constraints
+analysis results
+```
+
+---
+
+# Possible future CLI
+
+Eventually:
+
+```text
+cargo law fetch gg
+cargo law inspect gg
+cargo law check gg
+cargo law render gg
+cargo law diff gg
+cargo law refs GG::Art20
+cargo law semantics GG::Art20
+cargo law constraints GG::Art20
+cargo law sat scenario.toml
+cargo law explain conflict-42
+```
+
+The exact CLI is not an initial priority.
+
+---
+
+# Scenario-based analysis
+
+Formal analysis will often require facts not contained in legislation itself.
+
+A scenario may eventually provide those facts.
+
+For example:
+
+```toml
+[scenario]
+date = "..."
+jurisdiction = "..."
+
+[[facts]]
+predicate = "..."
+value = true
+
+[[assumptions]]
+id = "A1"
+description = "..."
+```
+
+Then:
+
+```text
+law model
++
+semantic rules
++
+scenario facts
++
+interpretation assumptions
+        ↓
+constraint system
+        ↓
+analysis
+```
+
+This cleanly separates:
+
+```text
+what the source says
+```
+
+from:
+
+```text
+what facts are assumed about the world
+```
+
+---
+
+# Source updates
+
+When the external consolidated source changes:
+
+```text
+fetch new source
+      ↓
+record provenance + checksum
+      ↓
+compare source snapshots
+      ↓
+identify changed provisions
+      ↓
+update structural model
+      ↓
+identify affected semantic models
+      ↓
+rerun analyses
+      ↓
+inspect changed results
+```
+
+Eventually this creates an interesting form of dependency tracking:
+
+```text
+changed statutory text
+        ↓
+affected legal structures
+        ↓
+affected semantic norms
+        ↓
+affected constraints
+        ↓
+affected conclusions
+```
+
+---
+
+# Git as another view
+
+A useful future convention may be:
+
+```text
+one external legal update
+≈
+one focused commit
+```
+
+This can make Git history another inspectable representation of legal change.
+
+Potential tooling:
+
+```text
+show provisions changed between commits
+show semantic rules affected
+show broken references
+show analyses whose result changed
+show dependency paths from source change to conclusion
+```
+
+---
+
+# Licensing and external material
+
+The repository should distinguish between:
+
+```text
+project-authored code
+official statutory material
+project-authored semantic annotations
+third-party material
+```
+
+Do not assume one license automatically applies to everything in the repository.
+
+A possible layout:
+
+```text
+LICENSE
+LICENSES/
+NOTICE.md
+```
+
+Semantic annotations produced by the project should also be clearly distinguishable from official legal text.
+
+---
+
+# Candidate dependencies
+
+Dependencies should be introduced only when they solve an immediate problem.
+
+Likely early candidates:
+
+## `quick-xml`
+
+For:
+
+```text
+XML inspection
+XML parsing
+XML generation
+```
+
+## `thiserror`
+
+For explicit domain and transformation errors.
+
+## `serde`
+
+Potentially useful for:
+
+```text
+source metadata
+scenarios
+configuration
+intermediate formats
+```
+
+Whether core legal-domain types should derive Serde serialization should be determined experimentally.
+
+## Solver libraries
+
+Do not add one until the first semantic experiment actually needs it.
+
+Possible future choices may include SAT or SMT libraries.
+
+The solver choice should not determine the domain architecture.
+
+---
+
+# Errors should preserve meaning
+
+Avoid turning all failures into strings.
+
+Potential categories may eventually include:
+
+```text
+SourceError
+ParseError
+StructuralError
+ReferenceError
+SemanticModelError
+LoweringError
+UnsupportedConstruct
+AnalysisError
+```
+
+Particularly important is distinguishing:
+
+```text
+contradiction in the modeled constraints
+```
+
+from:
+
+```text
+failure to construct the constraints
+```
+
+and from:
+
+```text
+construct not supported by the current model
+```
+
+---
+
+# A useful rule for abstractions
+
+Whenever a new type, trait, macro or layer is proposed, ask:
+
+> What repeated distinction in the actual law, semantics or workflow does this abstraction preserve?
+
+If the answer is unclear, the abstraction may be premature.
+
+---
+
+# A useful rule for formalization
+
+Whenever a piece of natural-language law is converted into semantics, ask:
+
+```text
+What information did we preserve?
+
+What information did we discard?
+
+What interpretation did we choose?
+
+What alternative interpretations remain possible?
+
+Can the formal object be traced back to its source?
+```
+
+If these questions cannot be answered, the formalization should not silently become authoritative.
+
+---
+
+# A useful rule for solver results
+
+Never report:
+
+```text
+the law is inconsistent
+```
+
+merely because a solver returns `UNSAT`.
+
+Prefer:
+
+```text
+Under assumptions A,
+the modeled constraints derived from provisions X, Y and Z
+are jointly unsatisfiable.
+```
+
+Similarly, `SAT` does not mean:
+
+```text
+the behavior is legally valid
+```
+
+It means only that the current formal model admits at least one satisfying assignment.
+
+---
+
+# Definition of done for the first infrastructure milestone
+
+The first infrastructure milestone is complete when:
+
+```text
+cargo check
+cargo test
+cargo clippy
+```
+
+pass and:
+
+* the Gesetze-im-Internet catalog can be fetched;
+* the GG XML archive can be discovered automatically;
+* the XML can be downloaded and extracted;
+* provenance is recorded;
+* archive and XML checksums are recorded;
+* the DTD is available;
+* the GG source XML can be parsed;
+* a basic corpus inspector can describe its structure;
+* the process is reproducible locally.
+
+No substantial legal ontology is required yet.
+
+---
+
+# Definition of done for the first structural milestone
+
+The first structural milestone is complete when:
+
+* a small part of the Grundgesetz is represented through typed Rust structures;
+* exact source text is not unnecessarily duplicated;
+* identifiers are typed where useful;
+* source provenance remains accessible;
+* generated XML or another external representation can be compared with the reference source;
+* basic structural validation works;
+* the model can evolve without depending on the comparison fixture at runtime.
+
+---
+
+# Definition of done for the first semantic milestone
+
+The first semantic milestone is complete when:
+
+* a few synthetic legal norms can be represented;
+* conditions and at least basic modalities are explicit;
+* semantic norms retain source/provenance information;
+* those norms can be lowered into formal constraints;
+* the system can distinguish at least `SAT` and `UNSAT`;
+* a satisfying example can be inspected;
+* an unsatisfiable case can identify the relevant modeled norms;
+* assumptions remain explicit;
+* tests demonstrate obligation/prohibition and exception cases.
+
+---
+
+# Definition of done for the first real-law analysis milestone
+
+A first real-law analysis is complete when:
+
+* at least one real provision is modeled semantically;
+* every semantic assertion points back to its exact source;
+* interpretation choices are documented as assumptions;
+* generated constraints can be inspected;
+* the analysis result can be reproduced;
+* the result does not overclaim beyond the model;
+* changing an assumption predictably changes the analysis where appropriate.
 
 ---
 
@@ -1477,59 +2641,102 @@ The first substantial milestone can be considered complete when:
 
 Exploratory solo project.
 
-The architecture is intentionally not fixed yet.
+The architecture is intentionally not fixed.
 
-The first objective is to discover a minimally sufficient Rust representation by trying to reproduce one real German law faithfully.
-
-Expected development pattern:
+The project should evolve through repeated contact with real legal material:
 
 ```text
-real law
-  ↓
+real source
+    ↓
 initial representation
-  ↓
-failure / awkwardness / duplication
-  ↓
+    ↓
+awkwardness / failure / ambiguity
+    ↓
 identify missing distinction
-  ↓
-refine types
-  ↓
+    ↓
+refine model
+    ↓
 repeat
 ```
 
-The evolving model is itself part of the investigation.
+The same applies to semantics:
+
+```text
+legal proposition
+    ↓
+initial semantic model
+    ↓
+formalization failure
+    ↓
+identify lost distinction
+    ↓
+refine semantics
+    ↓
+repeat
+```
+
+Failures are useful evidence.
 
 ---
 
 # Guiding principle
 
-The project should preserve the familiar external form of law while replacing avoidable manual coupling underneath it.
+The project should make legal structure increasingly explicit without pretending that explicit structure eliminates legal interpretation.
 
 In short:
 
 ```text
-do not make humans synchronize representations
-when structure can synchronize them instead.
+source text
+    ↓
+typed structure
+    ↓
+explicit semantics
+    ↓
+explicit assumptions
+    ↓
+formal constraints
+    ↓
+mechanically inspectable consequences
 ```
 
-Or more operationally:
+while always retaining the reverse path:
 
 ```text
-German law
+analysis result
     ↓
-typed, navigable Rust structure
+constraint
     ↓
-validation + relationships + mechanics
+semantic norm
     ↓
-generated familiar legal representations
+legal provision
     ↓
-comparison against external authoritative/reference sources
+source snapshot
 ```
+
+The objective is not to make the machine the legal authority.
+
+The objective is to make the consequences of an explicit legal model inspectable.
 
 Rust is the medium.
 
-The law is the domain.
+Law is the domain.
 
-The generated document is the view.
+Formalization is an experiment.
 
-The structure underneath is what should carry the weight.
+Traceability is mandatory.
+
+And the interesting question is increasingly not only:
+
+```text
+Can we represent this law?
+```
+
+but also:
+
+```text
+What does this modeled set of legal constraints allow,
+require,
+forbid,
+leave open,
+or make impossible?
+```
