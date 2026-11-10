@@ -6,7 +6,7 @@ fn date(input: &str) -> Date {
 }
 
 #[test]
-fn ordinary_eighteenth_birthday() {
+fn bgb_section_2_confers_majority_on_completion_of_18_years() {
     let born = date("2008-11-10");
     assert_eq!(majority_on(born, date("2026-11-09")), Ok(Majority::Minor));
     assert_eq!(majority_on(born, date("2026-11-10")), Ok(Majority::Adult));

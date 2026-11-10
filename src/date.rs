@@ -4,12 +4,10 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
+use chrono::{Datelike, NaiveDate};
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Date {
-    year: i32,
-    month: u8,
-    day: u8,
-}
+pub struct Date(NaiveDate);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DateError {
@@ -31,32 +29,25 @@ impl Error for DateError {}
 impl Date {
     /// Construct a validated calendar date.
     pub fn new(year: i32, month: u8, day: u8) -> Result<Self, DateError> {
-        if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
+        if !(1..=9999).contains(&year) {
             return Err(DateError::InvalidValue);
         }
 
-        let days = match month {
-            2 if is_leap_year(year) => 29,
-            2 => 28,
-            4 | 6 | 9 | 11 => 30,
-            _ => 31,
-        };
-        if day == 0 || day > days {
-            return Err(DateError::InvalidValue);
-        }
-        Ok(Self { year, month, day })
+        NaiveDate::from_ymd_opt(year, u32::from(month), u32::from(day))
+            .map(Self)
+            .ok_or(DateError::InvalidValue)
     }
 
-    pub const fn year(self) -> i32 {
-        self.year
+    pub fn year(self) -> i32 {
+        self.0.year()
     }
 
-    pub const fn month(self) -> u8 {
-        self.month
+    pub fn month(self) -> u8 {
+        self.0.month() as u8
     }
 
-    pub const fn day(self) -> u8 {
-        self.day
+    pub fn day(self) -> u8 {
+        self.0.day() as u8
     }
 }
 
@@ -64,31 +55,28 @@ impl FromStr for Date {
     type Err = DateError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes = s.as_bytes();
-        if bytes.len() != 10
-            || bytes[4] != b'-'
-            || bytes[7] != b'-'
-            || !bytes[0..4].iter().all(|c| c.is_ascii_digit())
-            || !bytes[5..7].iter().all(|c| c.is_ascii_digit())
-            || !bytes[8..10].iter().all(|c| c.is_ascii_digit())
-        {
+        let date = NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|error| {
+            use chrono::format::ParseErrorKind::{Impossible, OutOfRange};
+
+            match error.kind() {
+                Impossible | OutOfRange => DateError::InvalidValue,
+                _ => DateError::InvalidFormat,
+            }
+        })?;
+        if date.format("%Y-%m-%d").to_string() != s {
             return Err(DateError::InvalidFormat);
         }
-        let year = s[0..4].parse().map_err(|_| DateError::InvalidFormat)?;
-        let month = s[5..7].parse().map_err(|_| DateError::InvalidFormat)?;
-        let day = s[8..10].parse().map_err(|_| DateError::InvalidFormat)?;
-        Self::new(year, month, day)
+        if !(1..=9999).contains(&date.year()) {
+            return Err(DateError::InvalidValue);
+        }
+        Ok(Self(date))
     }
 }
 
 impl fmt::Display for Date {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:04}-{:02}-{:02}", self.year, self.month, self.day)
+        write!(f, "{}", self.0.format("%Y-%m-%d"))
     }
-}
-
-pub(crate) const fn is_leap_year(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 #[cfg(test)]
@@ -111,7 +99,9 @@ mod tests {
     }
 
     #[test]
-    fn malformed_utf8_does_not_panic() {
-        assert_eq!("abcd-é-01".parse::<Date>(), Err(DateError::InvalidFormat));
+    fn preserves_strict_iso_date_input_and_year_range() {
+        assert_eq!("2026-1-2".parse::<Date>(), Err(DateError::InvalidFormat));
+        assert_eq!("0000-01-01".parse::<Date>(), Err(DateError::InvalidValue));
+        assert_eq!("10000-01-01".parse::<Date>(), Err(DateError::InvalidFormat));
     }
 }

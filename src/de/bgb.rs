@@ -12,7 +12,7 @@
 //! or assert legal capacity under separate provisions.
 
 use crate::Date;
-use crate::date::is_leap_year;
+use chrono::NaiveDate;
 use std::error::Error;
 use std::fmt;
 
@@ -78,12 +78,14 @@ pub fn majority_on(birth: Date, assessment: Date) -> Result<Majority, Evaluation
     }
 
     let threshold_year = birth.year() + 18;
-    let (threshold_month, threshold_day) =
-        if birth.month() == 2 && birth.day() == 29 && !is_leap_year(threshold_year) {
-            (3, 1)
-        } else {
-            (birth.month(), birth.day())
-        };
+    let (threshold_month, threshold_day) = if birth.month() == 2
+        && birth.day() == 29
+        && NaiveDate::from_ymd_opt(threshold_year, 2, 29).is_none()
+    {
+        (3, 1)
+    } else {
+        (birth.month(), birth.day())
+    };
 
     let is_adult = (assessment.year(), assessment.month(), assessment.day())
         >= (threshold_year, threshold_month, threshold_day);
