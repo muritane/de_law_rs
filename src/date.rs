@@ -111,6 +111,16 @@ mod tests {
     }
 
     #[test]
+    fn supports_first_and_last_gregorian_dates() {
+        let first = Date::new(1, 1, 1).unwrap();
+        let last = Date::new(9999, 12, 31).unwrap();
+
+        assert_eq!(first.to_string(), "0001-01-01");
+        assert_eq!(last.to_string(), "9999-12-31");
+        assert!(Date::new(10000, 1, 1).is_err());
+    }
+
+    #[test]
     fn malformed_utf8_does_not_panic() {
         assert_eq!("abcd-é-01".parse::<Date>(), Err(DateError::InvalidFormat));
     }
