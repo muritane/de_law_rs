@@ -1,0 +1,41 @@
+name: Agent-ready development task
+description: Propose a bounded, testable change suitable for delegated implementation.
+title: "[Task]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended outcome
+      description: Explain the problem and what should be true after the change.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: List the expected area of change and explicitly out-of-scope work.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Provide observable criteria that reviewers can verify.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: legal_sources
+    attributes:
+      label: Legal source references
+      description: If executable legal behavior is involved, link the public sources and identify the relevant provisions. Do not rely on an agent to invent or infer citations.
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test requirements
+      description: Specify expected regression, boundary, failure, or exception tests and any commands required.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
