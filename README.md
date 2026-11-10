@@ -83,3 +83,21 @@ LICENSE             Apache-2.0
 - Treat unsupported inputs as errors, not invented answers.
 
 See `GOVERNANCE.md` and `CONTRIBUTING.md` before contributing.
+
+## Scheduled Copilot Automations
+
+For eligible private or internal repositories with Copilot cloud agent and
+automations enabled by the organization, a maintainer with write access can
+create a recurring automation from the repository's **Agents** tab. Choose
+**Automations**, create a personal or shared automation, write a bounded prompt,
+select a schedule (for example, weekly), and grant only the tools needed for
+that task. Availability and organization policies may vary; see the
+[Copilot automations documentation](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/about-automations)
+for current requirements and setup details. Automation configuration is stored
+separately from this repository.
+
+For example, a weekly issue-triage automation could ask Copilot to identify open
+development issues that lack acceptance criteria or test requirements and
+summarize the gaps for a maintainer. Keep prompts and tools narrowly scoped;
+review any proposed changes yourself. Do not grant or configure automatic
+merging, release publishing, or production deployment.
