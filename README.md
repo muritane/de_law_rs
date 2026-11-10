@@ -14,6 +14,11 @@ given date under § 2 BGB (completion of 18 years), using § 187(2) and
 when the age threshold of 18 took effect. Leap-day births and date validation
 are tested. Other legal age thresholds and legal capacity are **not** modeled.
 
+The reusable `de_law::has_reached_age` helper checks whether a date of birth
+has reached a specified number of whole calendar years on an assessment date.
+It is a date calculation only; callers remain responsible for determining
+which legal age threshold applies.
+
 Sources:
 
 - [§ 2 BGB](https://www.gesetze-im-internet.de/bgb/__2.html)

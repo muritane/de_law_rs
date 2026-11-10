@@ -10,4 +10,4 @@
 pub mod date;
 pub mod de;
 
-pub use date::{Date, DateError};
+pub use date::{AgeError, Date, DateError, has_reached_age};
