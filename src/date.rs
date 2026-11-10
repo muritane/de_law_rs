@@ -1,5 +1,7 @@
-//! A validated civil date for rule inputs. Gregorian calendar, years 0001–9999.
+//! A validated, date-only Gregorian calendar value for rule inputs.
+//! Years 0001–9999; no time zone or time-of-day is represented.
 
+use chrono::NaiveDate;
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -31,17 +33,9 @@ impl Error for DateError {}
 impl Date {
     /// Construct a validated calendar date.
     pub fn new(year: i32, month: u8, day: u8) -> Result<Self, DateError> {
-        if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
-            return Err(DateError::InvalidValue);
-        }
-
-        let days = match month {
-            2 if is_leap_year(year) => 29,
-            2 => 28,
-            4 | 6 | 9 | 11 => 30,
-            _ => 31,
-        };
-        if day == 0 || day > days {
+        if !(1..=9999).contains(&year)
+            || NaiveDate::from_ymd_opt(year, month.into(), day.into()).is_none()
+        {
             return Err(DateError::InvalidValue);
         }
         Ok(Self { year, month, day })
@@ -88,7 +82,7 @@ impl fmt::Display for Date {
 }
 
 pub(crate) const fn is_leap_year(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    NaiveDate::from_ymd_opt(year, 2, 29).is_some()
 }
 
 #[cfg(test)]
@@ -102,6 +96,13 @@ mod tests {
         assert!(Date::new(2026, 2, 29).is_err());
         assert!(Date::new(2026, 4, 31).is_err());
         assert!(Date::new(0, 1, 1).is_err());
+    }
+
+    #[test]
+    fn validates_supported_year_bounds() {
+        assert!(Date::new(1, 1, 1).is_ok());
+        assert!(Date::new(9999, 12, 31).is_ok());
+        assert!(Date::new(10_000, 1, 1).is_err());
     }
 
     #[test]

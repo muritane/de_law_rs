@@ -12,7 +12,9 @@ request. No custom legal language, parser, graph engine, registry, or runtime.
 given date under § 2 BGB (completion of 18 years), using § 187(2) and
 § 188(2)–(3) BGB for age calculation. It covers dates from **1975-01-01**,
 when the age threshold of 18 took effect. Leap-day births and date validation
-are tested. Other legal age thresholds and legal capacity are **not** modeled.
+are tested. Date validation delegates to Chrono's date-only Gregorian calendar
+type; these values are not UTC timestamps or Unix times. Other legal age
+thresholds and legal capacity are **not** modeled.
 
 Sources:
 
