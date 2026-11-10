@@ -1,24 +1,16 @@
 [package]
-name = "de-law-rs"
+name = "de-law"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-publish = false
+license = "Apache-2.0"
+description = "Experimental, native Rust representations of narrowly scoped German legal rules"
+keywords = ["law", "germany", "rules"]
+
+[lib]
+name = "de_law"
+path = "src/lib.rs"
 
 [[bin]]
 name = "de-law"
 path = "src/main.rs"
-
-[dependencies]
-anyhow = "1.0"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "4.6", features = ["derive"] }
-quick-xml = "0.42"
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
-serde = { version = "1.0", features = ["derive"] }
-sha2 = "0.10"
-toml = "1.1"
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
-
-[lints.rust]
-unsafe_code = "forbid"
