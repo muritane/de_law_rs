@@ -15,6 +15,7 @@ when the age threshold of 18 took effect. Leap-day births and date validation
 are tested. Other legal age thresholds and legal capacity are **not** modeled.
 
 Sources:
+
 - [§ 2 BGB](https://www.gesetze-im-internet.de/bgb/__2.html)
 - [§ 187 BGB](https://www.gesetze-im-internet.de/bgb/__187.html)
 - [§ 188 BGB](https://www.gesetze-im-internet.de/bgb/__188.html)

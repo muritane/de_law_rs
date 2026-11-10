@@ -44,7 +44,9 @@ impl fmt::Display for EvaluationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AssessmentBeforeBirth => write!(f, "assessment date precedes the date of birth"),
-            Self::UnsupportedHistoricalDate => write!(f, "dates before 1975-01-01 are not supported"),
+            Self::UnsupportedHistoricalDate => {
+                write!(f, "dates before 1975-01-01 are not supported")
+            }
         }
     }
 }
