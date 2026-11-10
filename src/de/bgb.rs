@@ -7,12 +7,13 @@
 //! - § 188(2)–(3) BGB (period ending, including leap-day births):
 //!   https://www.gesetze-im-internet.de/bgb/__188.html
 //!
-//! This module implements only the current 18-year threshold, as applicable
-//! from 1975-01-01 onward. It does not generalize to other legal age thresholds
-//! or assert legal capacity under separate provisions.
+//! This module applies the current 18-year threshold, as applicable from
+//! 1975-01-01 onward, using the generic calendar-age calculation. It does not
+//! establish other legal age thresholds or assert legal capacity under
+//! separate provisions.
 
 use crate::Date;
-use crate::date::is_leap_year;
+use crate::date::has_reached_age;
 use std::error::Error;
 use std::fmt;
 
@@ -77,16 +78,8 @@ pub fn majority_on(birth: Date, assessment: Date) -> Result<Majority, Evaluation
         return Err(EvaluationError::UnsupportedHistoricalDate);
     }
 
-    let threshold_year = birth.year() + 18;
-    let (threshold_month, threshold_day) =
-        if birth.month() == 2 && birth.day() == 29 && !is_leap_year(threshold_year) {
-            (3, 1)
-        } else {
-            (birth.month(), birth.day())
-        };
-
-    let is_adult = (assessment.year(), assessment.month(), assessment.day())
-        >= (threshold_year, threshold_month, threshold_day);
+    let is_adult = has_reached_age(birth, assessment, 18)
+        .map_err(|_| EvaluationError::AssessmentBeforeBirth)?;
 
     Ok(if is_adult {
         Majority::Adult

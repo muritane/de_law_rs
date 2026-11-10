@@ -3,13 +3,10 @@
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
+use time::{Date as CalendarDate, Month};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Date {
-    year: i32,
-    month: u8,
-    day: u8,
-}
+pub struct Date(CalendarDate);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DateError {
@@ -31,33 +28,86 @@ impl Error for DateError {}
 impl Date {
     /// Construct a validated calendar date.
     pub fn new(year: i32, month: u8, day: u8) -> Result<Self, DateError> {
-        if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
+        if !(1..=9999).contains(&year) {
             return Err(DateError::InvalidValue);
         }
 
-        let days = match month {
-            2 if is_leap_year(year) => 29,
-            2 => 28,
-            4 | 6 | 9 | 11 => 30,
-            _ => 31,
-        };
-        if day == 0 || day > days {
-            return Err(DateError::InvalidValue);
-        }
-        Ok(Self { year, month, day })
+        let month = Month::try_from(month).map_err(|_| DateError::InvalidValue)?;
+        CalendarDate::from_calendar_date(year, month, day)
+            .map(Self)
+            .map_err(|_| DateError::InvalidValue)
     }
 
     pub const fn year(self) -> i32 {
-        self.year
+        self.0.year()
     }
 
     pub const fn month(self) -> u8 {
-        self.month
+        self.0.month() as u8
     }
 
     pub const fn day(self) -> u8 {
-        self.day
+        self.0.day()
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgeError {
+    AssessmentBeforeBirth,
+}
+
+impl fmt::Display for AgeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AssessmentBeforeBirth => write!(f, "assessment date precedes the date of birth"),
+        }
+    }
+}
+
+impl Error for AgeError {}
+
+/// Check whether a person has reached a number of whole calendar years.
+///
+/// A person born on 29 February reaches the next age on 1 March in a
+/// non-leap year, following the calculation of periods under §§ 187(2) and
+/// 188(2)–(3) BGB:
+/// <https://www.gesetze-im-internet.de/bgb/__187.html>,
+/// <https://www.gesetze-im-internet.de/bgb/__188.html>.
+/// This date calculation does not determine whether a particular legal age
+/// threshold applies.
+///
+/// # Errors
+///
+/// Returns [`AgeError::AssessmentBeforeBirth`] if the assessment date precedes
+/// the date of birth.
+pub fn has_reached_age(birth: Date, assessment: Date, age: u32) -> Result<bool, AgeError> {
+    if assessment < birth {
+        return Err(AgeError::AssessmentBeforeBirth);
+    }
+
+    let Ok(age) = i32::try_from(age) else {
+        return Ok(false);
+    };
+    let Some(threshold_year) = birth.year().checked_add(age) else {
+        return Ok(false);
+    };
+    if !(1..=9999).contains(&threshold_year) {
+        return Ok(false);
+    }
+
+    let anniversary =
+        match CalendarDate::from_calendar_date(threshold_year, birth.0.month(), birth.day()) {
+            Ok(date) => date,
+            Err(_) if birth.month() == 2 && birth.day() == 29 => {
+                match CalendarDate::from_calendar_date(threshold_year, Month::March, 1) {
+                    Ok(date) => date,
+                    Err(_) => return Ok(false),
+                }
+            }
+            Err(_) => return Ok(false),
+        };
+
+    Ok(assessment.0 >= anniversary)
 }
 
 impl FromStr for Date {
@@ -83,12 +133,8 @@ impl FromStr for Date {
 
 impl fmt::Display for Date {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:04}-{:02}-{:02}", self.year, self.month, self.day)
+        fmt::Display::fmt(&self.0, f)
     }
-}
-
-pub(crate) const fn is_leap_year(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 #[cfg(test)]
