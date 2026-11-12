@@ -9,5 +9,7 @@
 
 pub mod date;
 pub mod de;
+pub mod person;
 
-pub use date::{AgeError, Date, DateError, has_reached_age};
+pub use date::{Date, DateError};
+pub use person::{AgeError, NaturalPerson, age_at, has_reached_age};

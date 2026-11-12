@@ -1,0 +1,21 @@
+[package]
+name = "de-law-http"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Minimal HTTP consumer of the de-law majority rule"
+publish = false
+
+[lib]
+name = "de_law_http"
+path = "src/lib.rs"
+
+[[bin]]
+name = "de-law-http"
+path = "src/main.rs"
+
+[dependencies]
+de-law = { path = ".." }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
