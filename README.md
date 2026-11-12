@@ -36,10 +36,10 @@ Requires Rust 1.85+ (edition 2024).
 ```sh
 cargo run -- majority --born 2008-11-10 --on 2026-11-10
 cargo run --example consumer
-cargo test --all-targets
-cargo test --doc
+cargo test --workspace --all-targets
+cargo test --workspace --doc
 cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 The CLI prints a generated result:
@@ -51,6 +51,49 @@ on=2026-11-10
 status=adult
 source=https://www.gesetze-im-internet.de/bgb/__2.html
 ```
+
+## HTTP service
+
+`http/` is a separate workspace package (`de-law-http`) that depends on the
+`de-law` library through a local path dependency and uses only the standard
+library for networking. It parses query parameters and renders JSON; all legal
+classification, date validation and supported-date checks come from
+`de_law::de::bgb::majority_on`. It is a local demonstration, not a hardened
+production server (no TLS, authentication or rate limiting).
+
+```sh
+cargo run -p de-law-http                 # listens on 127.0.0.1:8080
+curl -i 'http://127.0.0.1:8080/v1/majority?born=2008-11-10&on=2026-11-10'
+```
+
+```json
+{"rule":"de.bgb.2.majority","born":"2008-11-10","on":"2026-11-10","status":"adult","source":"https://www.gesetze-im-internet.de/bgb/__2.html"}
+```
+
+Errors are JSON `{"error":"<code>","message":"..."}`:
+
+| Status | `error` | Cause |
+| --- | --- | --- |
+| 400 | `missing_parameter` | `born` or `on` absent |
+| 400 | `invalid_query` | unknown or duplicate query parameter |
+| 400 | `invalid_date` | not a valid `YYYY-MM-DD` Gregorian date (years 0001–9999) |
+| 422 | `assessment_before_birth` | `on` precedes `born` |
+| 422 | `unsupported_date` | `on` before 1975-01-01; no legal conclusion is guessed |
+| 404 / 405 | `not_found` / `method_not_allowed` | other path / non-GET method |
+
+Legal coverage is exactly that of `majority_on` (see above): only the § 2 BGB
+age-18 classification from 1975-01-01 onward.
+
+### Reuse across consumers
+
+`tests/common/cases.rs` holds the representative cases (day before and on the
+18th birthday, leap-day birth, malformed dates, supported-date boundary) used by
+`tests/shared_cases.rs` (library and CLI) and `http/tests/http.rs` (HTTP). To
+see a library change reach both consumers without touching either, change the
+age `18` in `majority_on` (`src/de/bgb.rs`) and run
+`cargo test --workspace --all-targets`: the shared-case tests of the library,
+CLI and HTTP service all fail together, and `cargo run -- majority ...` and
+`curl` both report the new classification.
 
 Downstream Rust project:
 
@@ -69,6 +112,7 @@ files, and create the release tag.
 src/date.rs         Validated Gregorian dates
 src/de/bgb.rs       Native majority rule
 src/main.rs         Transient CLI rendering
+http/               Separate HTTP consumer of the library
 examples/consumer.rs Example external-style consumer
 tests/              Unit/integration/CLI tests
 .github/            CI and dependency maintenance
