@@ -8,16 +8,18 @@ request. No custom legal language, parser, graph engine, registry, or runtime.
 
 ## First implemented rule
 
-`de_law::de::bgb::majority_on` classifies a person as an adult or minor on a
-given date under § 2 BGB (completion of 18 years), using § 187(2) and
+`de_law::de::bgb::majority_at` classifies a `NaturalPerson` as an adult or minor
+on a given date under § 2 BGB (completion of 18 years), using § 187(2) and
 § 188(2)–(3) BGB for age calculation. It covers dates from **1975-01-01**,
 when the age threshold of 18 took effect. Leap-day births and date validation
 are tested. Other legal age thresholds and legal capacity are **not** modeled.
 
-The reusable `de_law::has_reached_age` helper checks whether a date of birth
-has reached a specified number of whole calendar years on an assessment date.
-It is a date calculation only; callers remain responsible for determining
-which legal age threshold applies.
+`NaturalPerson` stores the supplied birth date; `de_law::age_at` derives that
+person's completed calendar years at an assessment date. The reusable
+`de_law::has_reached_age` checks arbitrary whole-year thresholds. These
+calculations do not verify identity or whether a person exists or is alive.
+Assessments of future dates are hypothetical evaluations under the installed
+rule version, not predictions of future law.
 
 Sources:
 
@@ -55,33 +57,34 @@ source=https://www.gesetze-im-internet.de/bgb/__2.html
 ## HTTP service
 
 `http/` is a separate workspace package (`de-law-http`) that depends on the
-`de-law` library through a local path dependency and uses only the standard
-library for networking. It parses query parameters and renders JSON; all legal
-classification, date validation and supported-date checks come from
-`de_law::de::bgb::majority_on`. It is a local demonstration, not a hardened
-production server (no TLS, authentication or rate limiting).
+`de-law` library through a local path dependency. It accepts a typed JSON
+subject and renders JSON; all legal classification, date validation and
+supported-date checks come from `de_law::de::bgb::majority_at`. It is a local
+demonstration, not a hardened production server (no TLS, authentication or rate
+limiting).
 
 ```sh
 cargo run -p de-law-http                 # listens on 127.0.0.1:8080
-curl -i 'http://127.0.0.1:8080/v1/majority?born=2008-11-10&on=2026-11-10'
+curl -i -X POST http://127.0.0.1:8080/v1/majority/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":{"type":"natural_person","born_on":"2008-11-10"},"at":"2026-11-10"}'
 ```
 
 ```json
-{"rule":"de.bgb.2.majority","born":"2008-11-10","on":"2026-11-10","status":"adult","source":"https://www.gesetze-im-internet.de/bgb/__2.html"}
+{"rule":"de.bgb.2.majority","status":"adult","evaluated_at":"2026-11-10"}
 ```
 
 Errors are JSON `{"error":"<code>","message":"..."}`:
 
 | Status | `error` | Cause |
 | --- | --- | --- |
-| 400 | `missing_parameter` | `born` or `on` absent |
-| 400 | `invalid_query` | unknown or duplicate query parameter |
+| 400 | `invalid_request` | malformed JSON or unsupported subject type |
 | 400 | `invalid_date` | not a valid `YYYY-MM-DD` Gregorian date (years 0001–9999) |
-| 422 | `assessment_before_birth` | `on` precedes `born` |
-| 422 | `unsupported_date` | `on` before 1975-01-01; no legal conclusion is guessed |
-| 404 / 405 | `not_found` / `method_not_allowed` | other path / non-GET method |
+| 422 | `assessment_before_birth` | `at` precedes `born_on` |
+| 422 | `unsupported_historical_date` | `at` before 1975-01-01; no legal conclusion is guessed |
+| 404 / 405 | `not_found` / `method_not_allowed` | other path / non-POST method |
 
-Legal coverage is exactly that of `majority_on` (see above): only the § 2 BGB
+Legal coverage is exactly that of `majority_at` (see above): only the § 2 BGB
 age-18 classification from 1975-01-01 onward.
 
 ### Reuse across consumers
@@ -90,7 +93,7 @@ age-18 classification from 1975-01-01 onward.
 18th birthday, leap-day birth, malformed dates, supported-date boundary) used by
 `tests/shared_cases.rs` (library and CLI) and `http/tests/http.rs` (HTTP). To
 see a library change reach both consumers without touching either, change the
-age `18` in `majority_on` (`src/de/bgb.rs`) and run
+age `18` in `majority_at` (`src/de/bgb.rs`) and run
 `cargo test --workspace --all-targets`: the shared-case tests of the library,
 CLI and HTTP service all fail together, and `cargo run -- majority ...` and
 `curl` both report the new classification.

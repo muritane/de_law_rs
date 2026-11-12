@@ -15,7 +15,7 @@ fn main() -> ExitCode {
     };
     match TcpListener::bind(&addr) {
         Ok(listener) => {
-            eprintln!("listening on http://{addr}/v1/majority");
+            eprintln!("listening on http://{addr}/v1/majority/evaluate");
             de_law_http::serve(listener);
             ExitCode::SUCCESS
         }

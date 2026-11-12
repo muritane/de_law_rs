@@ -2,7 +2,8 @@ mod common;
 
 use common::cases::{CASES, Outcome};
 use de_law::Date;
-use de_law::de::bgb::{EvaluationError, Majority, majority_on};
+use de_law::NaturalPerson;
+use de_law::de::bgb::{EvaluationError, Majority, majority_at};
 use std::process::Command;
 
 #[test]
@@ -13,12 +14,15 @@ fn library_matches_shared_cases() {
             .and_then(|b| on.parse::<Date>().map(|o| (b, o)));
         let actual = match result {
             Err(_) => Outcome::InvalidDate,
-            Ok((b, o)) => match majority_on(b, o) {
-                Ok(Majority::Minor) => Outcome::Minor,
-                Ok(Majority::Adult) => Outcome::Adult,
-                Err(EvaluationError::AssessmentBeforeBirth) => Outcome::BeforeBirth,
-                Err(EvaluationError::UnsupportedHistoricalDate) => Outcome::Unsupported,
-            },
+            Ok((b, o)) => {
+                let person = NaturalPerson::new(b);
+                match majority_at(&person, o) {
+                    Ok(Majority::Minor) => Outcome::Minor,
+                    Ok(Majority::Adult) => Outcome::Adult,
+                    Err(EvaluationError::AssessmentBeforeBirth) => Outcome::BeforeBirth,
+                    Err(EvaluationError::UnsupportedHistoricalDate) => Outcome::Unsupported,
+                }
+            }
         };
         assert_eq!(actual, expected, "{born} {on}");
     }

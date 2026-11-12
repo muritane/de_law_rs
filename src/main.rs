@@ -1,7 +1,8 @@
 //! Human-readable output is generated on demand; no result files are stored.
 
 use de_law::Date;
-use de_law::de::bgb::{MAJORITY_RULE_ID, MAJORITY_SOURCE_URL, majority_on};
+use de_law::NaturalPerson;
+use de_law::de::bgb::{MAJORITY_RULE_ID, MAJORITY_SOURCE_URL, majority_at};
 use std::env;
 use std::process::ExitCode;
 
@@ -41,7 +42,8 @@ fn run(mut args: impl Iterator<Item = String>) -> Result<(), String> {
 
     let born = born.ok_or("missing --born")?;
     let on = on.ok_or("missing --on")?;
-    let status = majority_on(born, on).map_err(|e| e.to_string())?;
+    let person = NaturalPerson::new(born);
+    let status = majority_at(&person, on).map_err(|e| e.to_string())?;
 
     println!("rule={MAJORITY_RULE_ID}");
     println!("born={born}");

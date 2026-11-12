@@ -1,8 +1,7 @@
 //! A validated civil date for rule inputs. Gregorian calendar, years 0001–9999.
 
-use std::error::Error;
-use std::fmt;
 use std::str::FromStr;
+use std::{error::Error, fmt};
 use time::{Date as CalendarDate, Month};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -49,65 +48,6 @@ impl Date {
     pub const fn day(self) -> u8 {
         self.0.day()
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgeError {
-    AssessmentBeforeBirth,
-}
-
-impl fmt::Display for AgeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AssessmentBeforeBirth => write!(f, "assessment date precedes the date of birth"),
-        }
-    }
-}
-
-impl Error for AgeError {}
-
-/// Check whether a person has reached a number of whole calendar years.
-///
-/// A person born on 29 February reaches the next age on 1 March in a
-/// non-leap year, following the calculation of periods under §§ 187(2) and
-/// 188(2)–(3) BGB:
-/// <https://www.gesetze-im-internet.de/bgb/__187.html>,
-/// <https://www.gesetze-im-internet.de/bgb/__188.html>.
-/// This date calculation does not determine whether a particular legal age
-/// threshold applies.
-///
-/// # Errors
-///
-/// Returns [`AgeError::AssessmentBeforeBirth`] if the assessment date precedes
-/// the date of birth.
-pub fn has_reached_age(birth: Date, assessment: Date, age: u32) -> Result<bool, AgeError> {
-    if assessment < birth {
-        return Err(AgeError::AssessmentBeforeBirth);
-    }
-
-    let Ok(age) = i32::try_from(age) else {
-        return Ok(false);
-    };
-    let Some(threshold_year) = birth.year().checked_add(age) else {
-        return Ok(false);
-    };
-    if !(1..=9999).contains(&threshold_year) {
-        return Ok(false);
-    }
-
-    let anniversary =
-        match CalendarDate::from_calendar_date(threshold_year, birth.0.month(), birth.day()) {
-            Ok(date) => date,
-            Err(_) if birth.month() == 2 && birth.day() == 29 => {
-                match CalendarDate::from_calendar_date(threshold_year, Month::March, 1) {
-                    Ok(date) => date,
-                    Err(_) => return Ok(false),
-                }
-            }
-            Err(_) => return Ok(false),
-        };
-
-    Ok(assessment.0 >= anniversary)
 }
 
 impl FromStr for Date {

@@ -12,8 +12,7 @@
 //! establish other legal age thresholds or assert legal capacity under
 //! separate provisions.
 
-use crate::Date;
-use crate::date::has_reached_age;
+use crate::{Date, NaturalPerson, has_reached_age};
 use std::error::Error;
 use std::fmt;
 
@@ -54,8 +53,10 @@ impl fmt::Display for EvaluationError {
 
 impl Error for EvaluationError {}
 
-/// Classify a person's age of majority under § 2 BGB, using the supplied
-/// birth date and assessment date. Does not look up or retain personal data.
+/// Classify a natural person's age of majority under § 2 BGB.
+///
+/// The assessment uses the supplied birth date and the installed rule version.
+/// It does not verify a person's identity, existence, or future legal status.
 ///
 /// For a person born on 29 February, majority begins on 1 March in the
 /// non-leap year in which the person completes 18 years.
@@ -63,22 +64,22 @@ impl Error for EvaluationError {}
 /// # Examples
 ///
 /// ```
-/// use de_law::Date;
-/// use de_law::de::bgb::{majority_on, Majority};
+/// use de_law::{Date, NaturalPerson};
+/// use de_law::de::bgb::{majority_at, Majority};
 ///
-/// let birth = "2008-11-10".parse::<Date>().unwrap();
+/// let person = NaturalPerson::new("2008-11-10".parse::<Date>().unwrap());
 /// let today = "2026-11-10".parse::<Date>().unwrap();
-/// assert_eq!(majority_on(birth, today), Ok(Majority::Adult));
+/// assert_eq!(majority_at(&person, today), Ok(Majority::Adult));
 /// ```
-pub fn majority_on(birth: Date, assessment: Date) -> Result<Majority, EvaluationError> {
-    if assessment < birth {
+pub fn majority_at(person: &NaturalPerson, assessment: Date) -> Result<Majority, EvaluationError> {
+    if assessment < person.born_on {
         return Err(EvaluationError::AssessmentBeforeBirth);
     }
     if (assessment.year(), assessment.month(), assessment.day()) < (1975, 1, 1) {
         return Err(EvaluationError::UnsupportedHistoricalDate);
     }
 
-    let is_adult = has_reached_age(birth, assessment, 18)
+    let is_adult = has_reached_age(person, assessment, 18)
         .map_err(|_| EvaluationError::AssessmentBeforeBirth)?;
 
     Ok(if is_adult {

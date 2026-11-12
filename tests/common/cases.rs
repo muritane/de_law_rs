@@ -1,5 +1,5 @@
 //! Representative cases shared by the library, CLI and HTTP service tests.
-//! Expected outcomes are classifications of `de_law::de::bgb::majority_on`;
+//! Expected outcomes are classifications of `de_law::de::bgb::majority_at`;
 //! consumers must not re-derive them.
 
 #![allow(dead_code)]
