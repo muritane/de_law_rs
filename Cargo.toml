@@ -19,4 +19,4 @@ name = "de-law"
 path = "src/main.rs"
 
 [dependencies]
-time = "=0.3.44"
+time = "=0.3.45"
